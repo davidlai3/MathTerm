@@ -39,14 +39,31 @@ const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const FENCE_LOOKBACK = 200;
 
 // TUIs (Claude Code) hide the cursor and move it around while redrawing; only a visible cursor marks the
-// row being edited. DECTCEM is tracked here because xterm doesn't expose it; returning false keeps xterm's
-// own handling.
-let cursorVisible = true;
+// row being edited. But editors hide it briefly during every redraw too (nvim on each keystroke), and a paint
+// in that window would typeset the line being typed for a frame. So for HIDE_GRACE ms after the cursor hides,
+// the row it was on still counts as the editing row. DECTCEM is tracked here because xterm doesn't expose
+// it; returning false keeps xterm's own handling.
+const HIDE_GRACE = 300;
+let cursorVisible = true, hiddenAt = 0, hiddenRow = 0; // hiddenRow: absolute buffer row
 for (const [final, vis] of [['h', true], ['l', false]]) {
   term.parser.registerCsiHandler({ prefix: '?', final }, (params) => {
-    if (params.includes(25)) { cursorVisible = vis; queueScan(); }
+    if (!params.includes(25)) return false;
+    if (cursorVisible && !vis) {
+      const b = term.buffer.active;
+      hiddenAt = performance.now();
+      hiddenRow = b.baseY + b.cursorY;
+      setTimeout(queueScan, HIDE_GRACE + 20); // still hidden then (Claude Code): typeset that row too
+    }
+    cursorVisible = vis;
+    queueScan();
     return false;
   });
+}
+// The editing row in buffer coordinates, or null when there's none.
+function editRow() {
+  const b = term.buffer.active;
+  if (cursorVisible) return b.baseY + b.cursorY;
+  return performance.now() - hiddenAt < HIDE_GRACE ? hiddenRow : null;
 }
 
 // The theme's 16 colors and the 256-color cube, to give math its source's colors.
@@ -101,7 +118,8 @@ const unstrip = (tex) => tex.replace(/(\\[a-zA-Z]+|\bO)!/g, '$1\\!');
 
 function findMath() {
   const b = term.buffer.active;
-  const cursorRow = cursorVisible ? b.baseY + b.cursorY - b.viewportY : -1; // viewport-relative
+  const er = editRow();
+  const cursorRow = er === null ? -1 : er - b.viewportY; // viewport-relative
   const rows = [];
   for (let y = 0; y < term.rows; y++) {
     const line = b.getLine(b.viewportY + y);
@@ -291,7 +309,9 @@ function joinRows(found) {
       if (ch === '│') break;
       if (ch !== ' ') x1 = x + 1;
     }
-    if (x1 === last.x1) { out.push(...ms); continue; } // nothing after the math: no gap to close
+    // A lone match at the row's end has no gap to close. Text between matches still needs shifting, even
+    // when the last match ends the row.
+    if (ms.length === 1 && x1 === last.x1) { out.push(...ms); continue; }
     const parts = [];
     const text = (a, z) => {
       const runs = [];

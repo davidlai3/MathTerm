@@ -199,6 +199,9 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
         let _ = w.set_position(tauri::LogicalPosition::new(-20000.0, 0.0));
     }
     std::thread::spawn(move || {
+        // A failed earlier run's shell can outlive the app, finish its INIT and leave a stale `.ready`,
+        // which would make this run shoot at once. INIT is only typed 1.5s in, so clearing it here is safe.
+        let _ = std::fs::remove_file(format!("{path}.ready"));
         if let Some(w) = app.get_webview_window("main") {
             // MATHTERM_SHOT_SIZE=WxH resizes 2s in. Print before that to test reflow, or `sleep 3` in
             // MATHTERM_INIT to print at the new size.

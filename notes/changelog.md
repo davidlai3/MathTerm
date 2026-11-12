@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-12: gap with math at the row's end, nvim typing flicker
+- `joinRows` skipped rows whose *last* match ends the row, so text between two matches kept its gap
+  (`$X_n$ depends on $X_{n-1}, \dots, X_0$`, user screenshot). Now only a lone match at the row's end is
+  skipped. Verified by screenshot.
+- Typing in nvim on a line with math flickered: nvim hides the cursor during every redraw, and since the
+  scroll-flicker fix a hidden cursor meant "no editing row", so a paint mid-redraw typeset the line for a
+  frame. Now the row the cursor hid on still counts as the editing row for `HIDE_GRACE` (300 ms), after which a
+  rescan typesets it (Claude Code keeps the cursor hidden). Not yet verified in nvim.
+- Shot hook deletes a stale `$MATHTERM_SHOT.ready` at startup: a failed run's shell can outlive the app and
+  touch it later, making the next run with the same path shoot immediately.
+
 ## 2026-11-12: display math centered on the window
 - `centerDisplay` in `automath.js`: auto-detected display math (multi-row blocks, one-line `$$..$$`, wrapped
   lines) is centered on the window like `mdv`'s, when its rows (grown ones included) hold nothing else.
