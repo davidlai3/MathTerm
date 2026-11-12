@@ -14,7 +14,7 @@ REPLY = re.compile(rb"\033\]7777;=;(\d+);(\d+)\a")
 MATH_PH = re.compile("\ue000(\\d+)\ue001")
 CODE_PH = re.compile("\ue002(\\d+)\ue003")
 
-CODE_ON, FG_OFF = "\033[38;5;180m", "\033[39m"
+CODE_ON, FG_OFF = "\033[33m", "\033[39m"  # ANSI yellow, so the terminal theme picks the shade
 DIM, DIM_OFF, BOLD, BOLD_OFF = "\033[2m", "\033[22m", "\033[1m", "\033[22m"
 ANSI = re.compile(r"\033\[[0-9;]*m|\033\]8;;[^\033]*\033\\")  # SGR + OSC 8 links (zero-width)
 LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")

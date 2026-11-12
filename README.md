@@ -1,73 +1,89 @@
 # mathterm
 
-A terminal that typesets LaTeX. Math is rendered with KaTeX as real vector text, the same way Obsidian
-or a browser shows it, not as Unicode approximations or pasted-in images.
+A terminal that typesets LaTeX. Any `$...$` that shows up on screen is rendered with KaTeX as real
+vector text, the same way Obsidian or a browser shows it. That includes `cat` output, Claude Code's
+replies, and the file you're editing in nvim. No plugins, and no cooperation from the program.
 
-![mathterm rendering a markdown file with inline and display math](docs/demo.png)
+![nvim editing a markdown file in mathterm: the math is typeset in place, the cursor line shows its source](docs/nvim.png)
 
 ## How it works
 
-mathterm is a normal terminal (xterm.js in a Tauri window, your login shell in a pty) that understands
-one extra escape sequence, **OSC 7777**. A program prints the LaTeX inside that sequence, and the
-terminal draws the typeset math over the cells the program reserved. A query form lets the program ask
-how many cells an expression needs first, so the layout is exact.
+mathterm is a normal terminal: xterm.js in a Tauri window, with your login shell in a pty. After every
+redraw it scans the visible text for `$...$`, `$$...$$`, `\(...\)` and `\[...\]`. It then lays typeset
+math over the cells where the source sits, in the source's own colors.
 
-The included `mdv` tool uses this to print styled markdown files with their `$...$` and `$$...$$` math rendered.
-Any program can do the same. See [NOTES.md](NOTES.md#protocol-osc-7777) for the protocol.
+- **Editors:** the line under the cursor (or a `$$` block containing it) shows the raw LaTeX, so you can
+  edit it, like Obsidian's live preview. Line numbers and splits are handled.
+- **Room to breathe:** display math grows into the blank lines around it, which is how Claude Code and most
+  markdown lay out equations, so it renders at full size instead of being squeezed into one row.
+- **Few false positives:** `$5 and $10` stays text, code fences and `` `inline code` `` are skipped, and
+  anything KaTeX can't parse is left alone.
+- **Copy works:** the cells still hold the source, so copying an equation gives you its LaTeX.
+
+Cmd-Shift-M toggles detection.
 
 ## Install and run
 
-Requires macOS, Node, Rust (`brew install rust`) and Python 3. Optional: `pip3 install pygments` for
-better syntax highlighting in code blocks.
+Requires macOS, Node, Rust (`brew install rust`) and Python 3.
 
 ```sh
 npm install
 npm start
 ```
 
-## Usage
+## Config
 
-Inside mathterm, `mdv` is on your `PATH`:
+`~/.config/mathterm/config.json`:
+
+```json
+{ "theme": "catppuccin-mocha", "fontSize": 14, "fontFamily": "Menlo, monospace" }
+```
+
+Built-in themes are `default` and `catppuccin-mocha`. `theme` can also be an object with xterm.js theme
+keys (`background`, `foreground`, `black` ... `brightWhite`) to use any other scheme.
+
+| Keys | |
+|---|---|
+| Cmd-+ / Cmd-- / Cmd-0 | Zoom in / out / reset |
+| Cmd-Shift-M | Toggle math detection |
+| Cmd-click | Open a link (hover shows the URL) |
+
+## Add-on: `mdv`, a markdown viewer
+
+Detection can only use the space a program already left for the math, so inline math can leave a gap
+where its source was wider. `mdv` is a small viewer (Python, stdlib only) that lays the page out itself:
 
 ```sh
-mdv notes.md                         # print a styled markdown file with its math rendered
+mdv notes.md                         # styled markdown with typeset math
 echo 'Euler: $e^{i\pi}+1=0$' | mdv   # or read from stdin
 ```
 
-Links are clickable: hover to see the URL, Cmd-click to open it.
+![mdv rendering a markdown file: headings, inline and display math, a table, highlighted code](docs/demo.png)
 
-**Auto-detect:** LaTeX in *any* program's output is typeset too. That includes `cat notes.md`, Claude
-Code's replies, and math inside nvim while you edit, where the line under the cursor shows the source
-so you can change it. Cmd-Shift-M toggles it.
+- Headings, bold/italic/strikethrough, lists, quotes, rules and clickable links.
+- Tables with borders and alignment, sized correctly around math in cells.
+- Syntax-highlighted code blocks (`pip3 install pygments` for better lexers; there's a built-in fallback).
+- Exact math layout: no gaps after inline math, tall inline math gets its own spacing, and display math
+  is centered.
 
-In other terminals `mdv` still styles the markdown and leaves the math as LaTeX source.
-With output redirected (`mdv f.md > out`) it prints the file unchanged.
+`mdv` talks to mathterm through **OSC 7777**, a small private escape sequence for asking how big an equation
+renders and drawing it in space the program reserved. The details are in
+[NOTES.md](NOTES.md#protocol-osc-7777). In other terminals `mdv` still styles the markdown and leaves the
+math as source. With output redirected (`mdv f.md > out`) it prints the file unchanged.
 
 ## Status
 
-Early prototype. What works:
+Early prototype, macOS only. Known gaps:
 
-- Inline and display math in markdown, sized by the terminal. Display math is centered, and tall inline
-  math (nested fractions, sums with limits) gets extra line spacing.
-- Math and rules follow their text when the window is resized and lines re-wrap.
-- Markdown styling: headings, bold/italic/strikethrough, inline code, lists, quotes, rules.
-- Tables with borders and column alignment (math in cells is sized correctly).
-- Syntax-highlighted code blocks (pygments if installed, otherwise a built-in highlighter).
-- Clickable links.
-- Auto-detect mode: typesets `$...$`, `$$...$$`, `\(...\)` and `\[...\]` found anywhere on screen, with
-  editor-friendly behavior (cursor line shows source, code is skipped).
-- `$5`-style dollar amounts, code spans and code blocks are never treated as math.
-
-Known gaps:
-
-- Tables wider than the window wrap and break their borders. Long lines aren't re-wrapped.
-- Text printed before a resize keeps its original line spacing. For example, tall inline math shrinks to
-  one row instead of gaining space if its line re-wraps.
+- Detected inline math can't take more room than its source: a gap is left after it, and tall inline math
+  with text directly above and below is shrunk to fit its row.
+- TUIs that draw code blocks without backticks (Claude Code does) can get `$var$`-like text typeset.
+- In `mdv`, tables wider than the window wrap and break their borders.
 
 ## Roadmap
 
-- **Auto-detect polish:** verify against Claude Code's markdown rendering, and skip code blocks that TUIs
-  draw without backticks.
+- **Detection polish:** check Claude Code's handling of inline `$...$` and `\(...\)`, and recognize code
+  blocks drawn without backticks.
 - **Live preview:** `mdv --watch` in a split pane, for the fully styled page beside your editor.
 
 The full plan and changelog are in [NOTES.md](NOTES.md).

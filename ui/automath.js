@@ -2,7 +2,8 @@
 // the source's own cells. Works for programs that never send OSC 7777: Claude Code, cat, nvim while editing.
 // Overlays are screen-positioned and rebuilt from the viewport after every render, diffed by key, so
 // unchanged math is left alone. The cursor row (or a block containing it) keeps showing the source.
-// Toggle: Cmd-Shift-M. Uses `term`, `statusBar`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans`, `fitInk` from renderer.js.
+// Toggle: Cmd-Shift-M. Uses `term`, `flash`, `keyBindings`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans`, `fitInk` from renderer.js
+// and `ANSI_KEYS` from themes.js.
 
 let autoMath = true;
 const autoLayer = document.createElement('div');
@@ -27,11 +28,9 @@ const GROW_MARGIN = 0.25;
 // Markdown code: skip rows inside ``` fences (tracked from the top of the viewport) and `inline code`.
 const FENCE = /^\s*(?:\d+\s+)?```/;
 
-// xterm.js's default palette (Tango) and the 256-color cube, to give math its source's colors.
-const ANSI16 = ['#2e3436', '#cc0000', '#4e9a06', '#c4a000', '#3465a4', '#75507b', '#06989a', '#d3d7cf',
-  '#555753', '#ef2929', '#8ae234', '#fce94f', '#729fcf', '#ad7fa8', '#34e2e2', '#eeeeec'];
+// The theme's 16 colors and the 256-color cube, to give math its source's colors.
 function palette(i) {
-  if (i < 16) return ANSI16[i];
+  if (i < 16) return term.options.theme[ANSI_KEYS[i]];
   if (i < 232) {
     const v = [0, 95, 135, 175, 215, 255];
     i -= 16;
@@ -42,7 +41,7 @@ function palette(i) {
 }
 function cellColor(cell, wantFg) {
   const fg = wantFg !== !!cell.isInverse(); // inverse video swaps the two
-  if (fg ? cell.isFgDefault() : cell.isBgDefault()) return fg ? '#ffffff' : term.options.theme.background;
+  if (fg ? cell.isFgDefault() : cell.isBgDefault()) return term.options.theme[fg ? 'foreground' : 'background'];
   const v = fg ? cell.getFgColor() : cell.getBgColor();
   return (fg ? cell.isFgRGB() : cell.isBgRGB()) ? `#${v.toString(16).padStart(6, '0')}` : palette(v);
 }
@@ -187,7 +186,7 @@ function makeOverlay(item, cw, ch) {
   Object.assign(el.style, {
     left: `${item.x0 * cw}px`, top: `${item.top * ch}px`,
     width: `${(item.x1 - item.x0) * cw}px`, height: `${item.span * ch}px`,
-    color: item.c ? cellColor(item.c, true) : '#ffffff',
+    color: item.c ? cellColor(item.c, true) : term.options.theme.foreground,
     background: item.c ? cellColor(item.c, false) : term.options.theme.background,
   });
   const inner = document.createElement('div');
@@ -239,14 +238,10 @@ term.onScroll(queueScan);
 term.onResize(queueScan);
 term.onCursorMove(queueScan);
 
-term.attachCustomKeyEventHandler((e) => {
-  if (e.type === 'keydown' && e.metaKey && e.shiftKey && e.key.toLowerCase() === 'm') {
-    autoMath = !autoMath;
-    statusBar.textContent = `auto math: ${autoMath ? 'on' : 'off'}  ·  ⌘⇧M`;
-    statusBar.hidden = false;
-    setTimeout(() => { statusBar.hidden = true; }, 1200);
-    queueScan();
-    return false;
-  }
+keyBindings.push((e) => {
+  if (!(e.metaKey && e.shiftKey && e.key.toLowerCase() === 'm')) return false;
+  autoMath = !autoMath;
+  flash(`auto math: ${autoMath ? 'on' : 'off'}  ·  ⌘⇧M`, 1200);
+  queueScan();
   return true;
 });

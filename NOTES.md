@@ -1,6 +1,7 @@
 # mathterm notes
 
 A terminal that typesets LaTeX natively (KaTeX, vector text) instead of approximating it with Unicode or images.
+The main feature is auto-detect (any program's output). `mdv` + OSC 7777 is an add-on for exact layout.
 
 ## Architecture
 
@@ -9,6 +10,7 @@ A terminal that typesets LaTeX natively (KaTeX, vector text) instead of approxim
 | `src-tauri/src/main.rs` | Tauri backend. `start` spawns the login shell in a pty (`portable-pty`) and streams its output to the window as `pty` events (UTF-8 split across reads is carried over). `write` / `resize` commands go the other way. Sets `MATHTERM=1` and puts `bin/` on `PATH`. |
 | `src-tauri/tauri.conf.json` | Window, CSP, and `frontendDist = ui/`. |
 | `ui/renderer.js` | xterm.js terminal + the OSC 7777 handler: measures and draws KaTeX as xterm decorations. Talks to Rust via `window.__TAURI__` (`withGlobalTauri`). |
+| `ui/themes.js` | Built-in color schemes (`default`, `catppuccin-mocha`) in xterm ITheme form. |
 | `ui/automath.js` | Auto-detect mode: scans the viewport for LaTeX in any program's output and overlays typeset math on the source cells. Toggle with Cmd-Shift-M. |
 | `ui/index.html` | Loads xterm.js, KaTeX, and styles for overlays / the measuring probe. |
 | `ui/vendor/` | Copied from `node_modules` by `npm run vendor` (runs on `postinstall`). Gitignored. |
@@ -48,6 +50,22 @@ raw:    ESC ] 7777 ; raw ; <len> BEL                    (next len cells are lite
 - Replies arrive in query order. `mdv` sends all queries in one batch, reads replies from `/dev/tty` in raw
   mode with a 1s timeout, and falls back to guessed sizes if they don't all arrive.
 
+## Config, themes, zoom
+
+- `~/.config/mathterm/config.json` (or `$MATHTERM_CONFIG`), read by the Rust `config` command at startup and
+  parsed in the frontend, so a broken file shows an error in the status bar instead of failing:
+  `{ "theme": "catppuccin-mocha" | { ...ITheme }, "fontSize": 14, "fontFamily": "Menlo, monospace" }`.
+  A custom theme object is merged over `default`, so a partial one works.
+- `applyTheme` sets xterm's theme plus CSS variables (`--bg`, `--fg`, `--dim`, `--h1`, `--status-bg`) for
+  everything drawn outside xterm: math overlays, rules, the status bar. Auto-detect resolves palette
+  indexes through the theme's 16 colors (`ANSI_KEYS`). `mdv`'s code color is ANSI yellow (was 256-color 180),
+  so themes control it.
+- Zoom: Cmd-+ / Cmd-- / Cmd-0 (back to the config's size) via `setFontSize`, which refits, resizes the pty,
+  sets `--font-size` (KaTeX overlays and the measuring probe) and re-places drawn math (`relayout`).
+  Auto-detect overlays rebuild on their own, since cell size is part of their key.
+- Keybindings: xterm allows one custom key handler, so `renderer.js` owns it and features push onto
+  `keyBindings` (auto-detect's Cmd-Shift-M does).
+
 ## Auto-detect mode (`ui/automath.js`)
 
 For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). On by default; Cmd-Shift-M toggles.
@@ -85,14 +103,18 @@ npm run shot:docs  # same at 900x1010, saved as docs/demo.png for the README
 bin/mdv --test     # mdv self-check
 ```
 
-- Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (screenshot to that
-  path after 5s, then quit), `MATHTERM_SHOT_SIZE=WxH` (resize 2s in, shot at 6s: print before that to test reflow, or put `sleep 3`
+- Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed 1.5s after the shell starts), `MATHTERM_SHOT`
+  (screenshot to that path once the INIT command runs `touch $MATHTERM_SHOT.ready`, or after ~20s, then quit),
+  `MATHTERM_CONFIG` (config file to use instead of `~/.config/mathterm/config.json`), `MATHTERM_SHOT_SIZE=WxH` (resize 2s in, shot at 6s: print before that to test reflow, or put `sleep 3`
   in `MATHTERM_INIT` to print at the new size).
 - Shot mode never touches the screen. The window is parked off-screen, the app uses the Accessory
   activation policy (no Dock icon, no focus steal), and the capture is `screencapture -l <window id>`.
   This relies on `backgroundThrottling: "disabled"` in `tauri.conf.json`: without it, WebKit stops painting
   a window that isn't visible (e.g. when you click away) and the shot comes out blank or missing.
 - The window sometimes captures blank (no text at all), roughly 1 run in 6. Rerun.
+- Earlier "missing" and "prompt only" shots were two races: INIT was typed before zsh finished starting
+  (it sometimes dropped the Enter), and a fixed shot delay could beat `sleep N; mdv`. Fixed with the 1.5s
+  INIT delay and the `.ready` signal.
 - Gotcha: don't name a top-level `const` after a `window` property (`status`, `name`, ...). WebKit throws a
   SyntaxError and the whole script, and so the terminal, never runs.
 - Gotcha: xterm sets an inline `display: block` on decoration elements, so CSS `display: flex` on them is
@@ -100,6 +122,24 @@ bin/mdv --test     # mdv self-check
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: README leads with auto-detect
+- Auto-detect is the main feature. OSC 7777 is effectively `mdv`'s private channel (nothing else sends it),
+  so the README now presents `mdv` + OSC 7777 as an add-on for exact layout. New lead screenshot
+  `docs/nvim.png` (nvim editing `demo.md`); `npm run shot:docs` produces both images.
+- Direction: build new features on auto-detect. Keep OSC 7777 for what detection can't do (exact layout
+  in `mdv`, `raw` spans for `mdv`'s code, resize-proof `rule`s), but don't extend it. If it ever needs to
+  shrink: `mdv` could drop `draw`/query, print plain `$..$` with blank rows around display math for
+  detection to grow into, and remove ~200 lines of decoration code. The cost is gaps after inline math.
+
+### 2026-11-11: color schemes, zoom
+- `ui/themes.js` with `default` and `catppuccin-mocha`. Config file selects one, or supplies a custom ITheme.
+  All self-drawn UI (math overlays, rules, status bar, auto-detect colors) follows the theme via CSS variables.
+- Cmd-+ / Cmd-- / Cmd-0 zoom, re-laying out math at the new cell size.
+- Single shared key handler (`keyBindings`); auto-detect's toggle moved onto it.
+- Shot hook: waits for `$MATHTERM_SHOT.ready`; INIT typed 1.5s after the shell starts (see Dev).
+- Verified with screenshots: Mocha colors on `mdv demo.md`, and font size 20 via config (the same
+  `setFontSize` path the zoom keys use). The keys themselves were not exercised (no keyboard in shot mode).
 
 ### 2026-11-11: less cramped
 - Terminal `lineHeight: 1.2` (was 1.0): more air between text rows, and taller rows give math more height

@@ -6,28 +6,29 @@
   <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="vendor/katex.min.css">
   <style>
-    html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+    :root { --bg: #1e1e1e; --fg: #ffffff; --dim: #555753; --h1: #75507b; --status-bg: #2e3436; --font-size: 14px; }
+    html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
     #term { height: 100%; padding: 4px; box-sizing: border-box; }
     /* xterm puts an inline display:block on decorations, so children are positioned, not flexed */
-    .math { overflow: hidden; background: #1e1e1e; color: #e6e6e6; font-size: 14px; pointer-events: none; }
+    .math { overflow: hidden; background: var(--bg); color: var(--fg); font-size: var(--font-size); pointer-events: none; }
     .math.inline { overflow: visible; }
     .math > div { position: absolute; left: 0; top: 50%; white-space: nowrap; transform-origin: left center; }
     .math.display > div { left: 50%; transform-origin: center; }
     .math-probe { position: absolute; top: 0; left: 0; visibility: hidden;
-                  display: inline-block; white-space: nowrap; font-size: 14px; }
+                  display: inline-block; white-space: nowrap; font-size: var(--font-size); }
     .math .katex-display, .math-probe .katex-display { margin: 0; }
     .auto-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
-    .auto-math { position: absolute; font-size: 14px; }
+    .auto-math { position: absolute; font-size: var(--font-size); }
     .auto-math > div { position: absolute; left: 0; top: 50%; white-space: nowrap; transform-origin: left center; }
     .auto-math.block > div { left: 50%; transform-origin: center; }
     .auto-math .katex-display { margin: 0; }
     #status { position: fixed; left: 6px; bottom: 6px; max-width: 80%; overflow: hidden; text-overflow: ellipsis;
-              white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: #333; color: #ccc;
+              white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: var(--status-bg); color: var(--fg);
               font: 12px -apple-system, sans-serif; pointer-events: none; z-index: 10; }
     #status[hidden] { display: none; }
     .rule { pointer-events: none; }
-    .rule::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid #666; }
-    .rule-h1::after { top: calc(50% - 2px); border-top: 3px double #b16fbd; }
+    .rule::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--dim); }
+    .rule-h1::after { top: calc(50% - 2px); border-top: 3px double var(--h1); }
   </style>
 </head>
 <body>
@@ -36,6 +37,7 @@
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
   <script src="vendor/katex.min.js"></script>
+  <script src="themes.js"></script>
   <script src="renderer.js"></script>
   <script src="automath.js"></script>
 </body>

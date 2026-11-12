@@ -10,7 +10,7 @@ const term = new Terminal({
   fontFamily: 'Menlo, monospace',
   fontSize: 14,
   lineHeight: 1.2, // breathing room for text, and taller rows for math to grow into
-  theme: { background: '#1e1e1e' },
+  theme: THEMES.default,
   // OSC 8 hyperlinks: show the target on hover, open with Cmd-click (plain clicks still select text)
   linkHandler: {
     activate: (e, uri) => { if (e.metaKey) invoke('open_url', { url: uri }); },
@@ -23,15 +23,70 @@ const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(document.getElementById('term'));
 
-fit.fit();
-window.addEventListener('resize', () => {
+function flash(msg, ms = 1500) {
+  statusBar.textContent = msg;
+  statusBar.hidden = false;
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => { statusBar.hidden = true; }, ms);
+}
+
+function refit() {
   fit.fit();
   pty.resize(term.cols, term.rows);
-});
+}
+window.addEventListener('resize', refit);
+
+// Theme: xterm colors plus CSS variables for everything we draw ourselves (math overlays, rules, status bar).
+function applyTheme(theme) {
+  const t = { ...THEMES.default, ...theme }; // a partial custom theme falls back to the defaults
+  term.options.theme = t;
+  const css = document.documentElement.style;
+  for (const [k, v] of Object.entries({ bg: t.background, fg: t.foreground, dim: t.brightBlack,
+    h1: t.magenta, 'status-bg': t.black })) css.setProperty(`--${k}`, v);
+  if (typeof queueScan === 'function') queueScan(); // auto-detect overlays copy cell colors (automath.js)
+}
+
+// Zoom (Cmd +/-/0). Math overlays are laid out in cells, so they're re-placed at the new size.
+let baseFontSize = 14;
+function setFontSize(px) {
+  term.options.fontSize = Math.max(6, Math.min(48, px));
+  document.documentElement.style.setProperty('--font-size', `${term.options.fontSize}px`);
+  refit();
+  relayout();
+}
+
+// ~/.config/mathterm/config.json: { "theme": "catppuccin-mocha" | {..ITheme..}, "fontSize": 14, "fontFamily": "..." }
+function applyConfig(text) {
+  let cfg = {};
+  try {
+    cfg = JSON.parse(text || '{}');
+  } catch (e) {
+    flash(`config.json: ${e.message}`, 5000);
+  }
+  if (typeof cfg.theme === 'string' && !THEMES[cfg.theme]) {
+    flash(`config.json: unknown theme "${cfg.theme}" (built-in: ${Object.keys(THEMES).join(', ')})`, 5000);
+  }
+  applyTheme(typeof cfg.theme === 'string' ? THEMES[cfg.theme] : cfg.theme);
+  if (cfg.fontFamily) term.options.fontFamily = cfg.fontFamily;
+  baseFontSize = cfg.fontSize || baseFontSize;
+  setFontSize(baseFontSize);
+}
+
+// One key handler for the whole app (xterm allows only one). Return true from a binding to consume the key.
+const keyBindings = [
+  (e) => e.metaKey && (e.key === '=' || e.key === '+') && (setFontSize(term.options.fontSize + 1), true),
+  (e) => e.metaKey && e.key === '-' && (setFontSize(term.options.fontSize - 1), true),
+  (e) => e.metaKey && e.key === '0' && (setFontSize(baseFontSize), true),
+];
+term.attachCustomKeyEventHandler((e) => !(e.type === 'keydown' && keyBindings.some((k) => k(e))));
+
 term.onData(pty.write);
-// attach the listener before starting the shell so the first prompt isn't lost
-listen('pty', (e) => term.write(e.payload)).then(() =>
-  invoke('start', { cols: term.cols, rows: term.rows }));
+// Load the config (theme, font size) and attach the listener before starting the shell, so the shell starts
+// at the final size and the first prompt isn't lost.
+Promise.all([
+  invoke('config').then(applyConfig, () => applyConfig('')),
+  listen('pty', (e) => term.write(e.payload)),
+]).then(() => invoke('start', { cols: term.cols, rows: term.rows }));
 
 // Hidden element used to measure rendered KaTeX in pixels.
 const probe = document.createElement('div');
@@ -158,12 +213,13 @@ function draw(fields) {
 const rawSpans = [];
 
 // ponytail: re-renders every item's KaTeX on each resize; cache the rendered HTML if long scrollback gets slow
-term.onResize(() => {
+function relayout() {
   for (let i = items.length - 1; i >= 0; i--) {
     if (items[i].marker.isDisposed) items.splice(i, 1); // scrolled out of the scrollback
     else place(items[i]);
   }
-});
+}
+term.onResize(relayout);
 
 // Protocol (see NOTES.md):
 //   query:  OSC 7777 ; ? ; <i|d> ; <latex> BEL      -> reply OSC 7777 ; = ; <cols> ; <rows> BEL

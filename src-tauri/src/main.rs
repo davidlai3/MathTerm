@@ -38,14 +38,11 @@ fn start(app: AppHandle, session: State<Session>, cols: u16, rows: u16) -> Resul
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-    // dev hook: type a command at startup (see NOTES.md)
-    if let Ok(init) = std::env::var("MATHTERM_INIT") {
-        let _ = writer.write_all(format!("{init}\r").as_bytes());
-    }
-
+    let reader_app = app.clone();
     std::thread::spawn(move || {
+        let app = reader_app;
         let mut buf = [0u8; 8192];
         let mut carry = Vec::new(); // a UTF-8 char can be split across reads
         while let Ok(n) = reader.read(&mut buf) {
@@ -66,6 +63,18 @@ fn start(app: AppHandle, session: State<Session>, cols: u16, rows: u16) -> Resul
     });
 
     *slot = Some(Pty { writer, master: pair.master });
+
+    // dev hook: type a command once the shell is up (see NOTES.md). Typed immediately, zsh sometimes
+    // dropped the Enter while it was still initializing, and the command sat at the prompt.
+    if let Ok(init) = std::env::var("MATHTERM_INIT") {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            if let Some(p) = app.state::<Session>().0.lock().unwrap().as_mut() {
+                let _ = p.writer.write_all(format!("{init}\r").as_bytes());
+            };
+        });
+    }
     Ok(())
 }
 
@@ -81,6 +90,15 @@ fn resize(session: State<Session>, cols: u16, rows: u16) {
     if let Some(p) = session.0.lock().unwrap().as_ref() {
         let _ = p.master.resize(size(cols, rows));
     }
+}
+
+/// Contents of ~/.config/mathterm/config.json (or $MATHTERM_CONFIG), or "" if there isn't one.
+/// The frontend parses it, so a broken file shows an error in the window instead of failing here.
+#[tauri::command]
+fn config() -> String {
+    let path = std::env::var("MATHTERM_CONFIG")
+        .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/.config/mathterm/config.json")));
+    path.ok().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default()
 }
 
 /// Open an OSC 8 link in the default handler. Links come from arbitrary program output (`cat`-ing a file
@@ -106,8 +124,8 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
     }
     std::thread::spawn(move || {
         if let Some(w) = app.get_webview_window("main") {
-            // MATHTERM_SHOT_SIZE=WxH resizes 2s in (shot at 6s). Print before that to test reflow, or
-            // `sleep 3` in MATHTERM_INIT to print at the new size.
+            // MATHTERM_SHOT_SIZE=WxH resizes 2s in. Print before that to test reflow, or `sleep 3` in
+            // MATHTERM_INIT to print at the new size.
             std::thread::sleep(std::time::Duration::from_secs(2));
             let size = std::env::var("MATHTERM_SHOT_SIZE").ok();
             if let Some((sw, sh)) = size.as_deref().and_then(|s| s.split_once('x')) {
@@ -115,7 +133,15 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
                     let _ = w.set_size(tauri::LogicalSize::new(sw, sh));
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(4));
+            // Wait for the INIT command to signal it's done (`touch $MATHTERM_SHOT.ready`; the shell inherits
+            // the variable), then give the frame time to paint. Without a signal, shoot after ~20s.
+            let ready = format!("{path}.ready");
+            let signaled = (0..40).any(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                std::path::Path::new(&ready).exists()
+            });
+            std::thread::sleep(std::time::Duration::from_secs(if signaled { 1 } else { 0 }));
+            let _ = std::fs::remove_file(&ready);
             // capture by window id (-l): works off-screen and never includes other windows
             let ns = w.ns_window().unwrap() as *const objc2::runtime::AnyObject;
             let id: isize = unsafe { objc2::msg_send![&*ns, windowNumber] };
@@ -136,7 +162,7 @@ fn main() {
             Ok(())
         })
         .manage(Session::default())
-        .invoke_handler(tauri::generate_handler![start, write, resize, open_url])
+        .invoke_handler(tauri::generate_handler![start, write, resize, open_url, config])
         .run(tauri::generate_context!())
         .expect("error while running mathterm");
 }
