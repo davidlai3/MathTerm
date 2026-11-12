@@ -107,3 +107,7 @@ Early prototype, macOS only. Known gaps:
 - **Live preview:** `mdv --watch` in a split pane, for the fully styled page beside your editor.
 
 The full plan and changelog are in [NOTES.md](NOTES.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE).

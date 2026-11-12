@@ -2,6 +2,7 @@
   "name": "mathterm",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "start": "tauri dev",
     "app": "tauri build && rm -rf /Applications/mathterm.app && cp -R src-tauri/target/release/bundle/macos/mathterm.app /Applications/",
