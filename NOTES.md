@@ -134,6 +134,17 @@ bin/mdv --test     # mdv self-check
 
 ## Changelog
 
+### 2026-11-12: markdown tables in auto-detect
+- `tableAt` in `automath.js`: same rules as `mdv` (a row with `|`, a `TABLE_SEP` row, then rows while they
+  contain `|`), with an editor's line-number gutter taken from the separator row. Drawn by `makeTable` as an
+  HTML table over exactly its source rows: the header takes the header and separator rows, then one row per
+  body row, borders on cell edges (`--dim`). Scaled down if it doesn't fit.
+- Cells: `splitCells` (no split inside `$..$`, `` `..` `` or on `\|`), `cellHtml` (math, code in the theme's
+  yellow like `mdv`, bold, italic, strikethrough).
+- Cursor anywhere in the table shows the whole table as source. A soft-wrapped row leaves it as source.
+- Verified by screenshot with `cat` and nvim (`set number`), including alignment, math and fractions in
+  cells, an escaped `\|` line and `a | b` staying text. `docs/nvim.png` regenerated (shows the table).
+
 ### 2026-11-12: Cmd-F find
 - Find bar (`@xterm/addon-search`, vendored like the other addons): incremental, Enter / Shift-Enter to
   step, Esc to close, match count. The addon marks the active match by *selecting* it, and the selection
@@ -373,6 +384,8 @@ The mode exists (see "Auto-detect mode" above). Still to do:
 - **Claude Code, partly verified** (user screenshot): one-line `$$..$$` display math survives its markdown
   rendering with backslashes and `_` intact. Still unchecked: inline `$..$` and `\(..\)`. In that sample the
   model wrote inline math as Unicode (`Yₙ`) rather than LaTeX.
+- **Tables:** a soft-wrapped table row (narrow window) leaves the table as source. Cell fractions are
+  cramped in a one-row cell (the table is scaled to fit, not given more rows).
 - **Code without fences.** TUIs that render code blocks without backticks (Claude Code included) give no hint,
   so `$var$`-like text inside them can be typeset. Possible heuristic: skip rows whose cells share a
   code-block background color.

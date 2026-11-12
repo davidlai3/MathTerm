@@ -18,6 +18,8 @@ math over the cells where the source sits, in the source's own colors.
   markdown lay out equations, so it renders at full size instead of being squeezed into one row.
 - **Few false positives:** `$5 and $10` stays text, code fences and `` `inline code` `` are skipped, and
   anything KaTeX can't parse is left alone.
+- **Tables:** markdown tables (`| a | b |` with a `|---|` row) are drawn as real tables in their own
+  rows, with column alignment and math, code, bold and italic in cells.
 - **No gaps:** math usually renders narrower than its LaTeX source, so the text after it is redrawn
   flush against it.
 - **Copy works:** the cells still hold the source, so copying an equation gives you its LaTeX.
