@@ -96,6 +96,10 @@ const probe = document.createElement('div');
 probe.className = 'math-probe';
 document.body.appendChild(probe);
 
+// KaTeX's @font-face fonts load lazily on first use, so the first measurements would use fallback glyphs
+// (WebKit here never fires `loadingdone` either). Load them all up front; measuring code waits on this.
+const katexFonts = Promise.allSettled([...document.fonts].filter((f) => f.family.includes('KaTeX')).map((f) => f.load()));
+
 function cellSize() {
   const screen = term.element.querySelector('.xterm-screen');
   return [screen.clientWidth / term.cols, screen.clientHeight / term.rows];

@@ -10,7 +10,7 @@ let autoMath = true;
 const autoLayer = document.createElement('div');
 autoLayer.className = 'auto-layer';
 term.element.querySelector('.xterm-screen').appendChild(autoLayer);
-const autoEls = new Map(); // key -> element currently shown
+let autoEls = new Map(); // key (everything but position) -> [{ el, top, x0 }] currently shown
 const htmlCache = new Map(); // `${display}|${tex}` -> KaTeX HTML, or null if it doesn't parse
 
 // Same rules as mdv: no space just inside $, closing $ not followed by a digit (so "$5 and $10" is text).
@@ -28,6 +28,20 @@ const MAX_GROW = 3;
 const GROW_MARGIN = 0.25;
 // Markdown code: skip rows inside ``` fences (tracked from the top of the viewport) and `inline code`.
 const FENCE = /^\s*(?:\d+\s+)?```/;
+// Rows above the viewport read to know whether its top is inside a fence.
+// ponytail: fixed lookback, a fence opened further up is missed; track fence state per line if that bites.
+const FENCE_LOOKBACK = 200;
+
+// TUIs (Claude Code) hide the cursor and move it around while redrawing; only a visible cursor marks the
+// row being edited. DECTCEM is tracked here because xterm doesn't expose it; returning false keeps xterm's
+// own handling.
+let cursorVisible = true;
+for (const [final, vis] of [['h', true], ['l', false]]) {
+  term.parser.registerCsiHandler({ prefix: '?', final }, (params) => {
+    if (params.includes(25)) { cursorVisible = vis; queueScan(); }
+    return false;
+  });
+}
 
 // The theme's 16 colors and the 256-color cube, to give math its source's colors.
 function palette(i) {
@@ -74,9 +88,14 @@ function katexHtml(tex, display) {
   return htmlCache.get(key);
 }
 
+// Claude Code's markdown unescapes `\!` to `!`, so `\sin\!\left(` arrives as `\sin!\left(`. A `!` right
+// after a command name (or big-O: `O\!\left(`) is never a factorial in practice, so put the backslash back.
+// The other stripped escapes (`\,` `\{` `\\`) can't be told apart from real text.
+const unstrip = (tex) => tex.replace(/(\\[a-zA-Z]+|\bO)!/g, '$1\\!');
+
 function findMath() {
   const b = term.buffer.active;
-  const cursorRow = b.baseY + b.cursorY - b.viewportY; // viewport-relative
+  const cursorRow = cursorVisible ? b.baseY + b.cursorY - b.viewportY : -1; // viewport-relative
   const rows = [];
   for (let y = 0; y < term.rows; y++) {
     const line = b.getLine(b.viewportY + y);
@@ -98,32 +117,60 @@ function findMath() {
     }
   }
   const isRaw = (y, x0, x1) => (raw.get(y) || []).some(([a, z]) => x0 < z && a < x1);
-  let inFence = false;
+  let fence0 = false;
+  for (let y = Math.max(0, b.viewportY - FENCE_LOOKBACK); y < b.viewportY; y++) {
+    if (FENCE.test(b.getLine(y)?.translateToString(true) ?? '')) fence0 = !fence0;
+  }
+  const blockBody = (y, end, start) => rows.slice(y + 1, end).map((r) => r.text.slice(start)).join(' ').trim();
+  // Multi-row $$ ... $$ / \[ ... \] blocks as openRow -> { end, start }. `$$` opens and closes alike, so when
+  // a block's opening row has scrolled off (always possible on the alt screen), its closing `$$` at the top
+  // would pair with the next block's opener and shift every pair below by one. So pair both ways (first
+  // `$$` as an opener, or as a stray closer) and keep the pairing whose bodies parse as LaTeX.
+  function pairBlocks(skipFirst) {
+    const blocks = new Map();
+    let inFence = fence0, score = 0, first = true;
+    for (let y = 0; y < rows.length; y++) {
+      const text = rows[y].text;
+      if (FENCE.test(text)) { inFence = !inFence; continue; }
+      const open = !inFence && BLOCK_OPEN.exec(text);
+      if (!open) continue;
+      const stray = first && skipFirst && open[2] === '$$';
+      first = false;
+      if (stray) { blocks.set(y, null); continue; }
+      const close = open[2] === '$$' ? '$$' : '\\]';
+      const start = open[1].length;
+      for (let k = y + 1; k < Math.min(rows.length, y + MAX_BLOCK_ROWS); k++) {
+        if (rows[k].text.slice(start).trim() !== close) continue;
+        blocks.set(y, { end: k, start });
+        score += katexHtml(unstrip(blockBody(y, k, start)), true) ? 1 : -1;
+        y = k;
+        break;
+      }
+    }
+    return { blocks, score };
+  }
+  const asOpener = pairBlocks(false), asCloser = pairBlocks(true);
+  const blocks = (asCloser.score > asOpener.score ? asCloser : asOpener).blocks;
+
+  let inFence = fence0;
   for (let y = 0; y < rows.length; y++) {
     const { text, col, wid } = rows[y];
     if (FENCE.test(text)) { inFence = !inFence; continue; }
     if (inFence) continue;
-    const open = BLOCK_OPEN.exec(text);
-    if (open) { // multi-row $$ ... $$ or \[ ... \]
-      const close = open[2] === '$$' ? '$$' : '\\]';
-      const start = open[1].length;
-      let end = -1;
-      for (let k = y + 1; k < Math.min(rows.length, y + MAX_BLOCK_ROWS); k++) {
-        if (rows[k].text.slice(start).trim() === close) { end = k; break; }
+    if (blocks.has(y)) {
+      const blk = blocks.get(y);
+      if (!blk) continue; // closing `$$` of a block that started above the viewport
+      const { end, start } = blk;
+      if (cursorRow < y || cursorRow > end) {
+        const x1 = Math.max(...rows.slice(y, end + 1).map((r) => {
+          const n = r.text.trimEnd().length;
+          return n ? r.col[n - 1] + r.wid[n - 1] : 0;
+        }));
+        const c = cell(y + 1, start) || cell(y, start);
+        found.push({ y, rows: end - y + 1, x0: col[start], x1, tex: unstrip(blockBody(y, end, start)), display: true, c });
       }
-      if (end > 0) {
-        if (cursorRow < y || cursorRow > end) {
-          const body = rows.slice(y + 1, end).map((r) => r.text.slice(start)).join(' ');
-          const x1 = Math.max(...rows.slice(y, end + 1).map((r) => {
-            const n = r.text.trimEnd().length;
-            return n ? r.col[n - 1] + r.wid[n - 1] : 0;
-          }));
-          const c = cell(y + 1, start) || cell(y, start);
-          found.push({ y, rows: end - y + 1, x0: col[start], x1, tex: body.trim(), display: true, c });
-        }
-        y = end;
-        continue;
-      }
+      y = end;
+      continue;
     }
     // The logical line: this row plus any soft-wrapped continuation rows (long $$..$$ lines wrap).
     let yEnd = y;
@@ -135,7 +182,7 @@ function findMath() {
       for (let i = 0; i < rows[k].col.length; i++) { gCol.push(rows[k].col[i]); gWid.push(rows[k].wid[i]); gRow.push(k); }
     }
     for (const m of gText.matchAll(INLINE_RX)) {
-      const tex = (m[1] ?? m[2] ?? m[3] ?? m[4]).trim();
+      const tex = unstrip((m[1] ?? m[2] ?? m[3] ?? m[4]).trim());
       const display = m[1] !== undefined || m[4] !== undefined;
       const i0 = m.index, i1 = m.index + m[0].length;
       const r0 = gRow[i0], r1 = gRow[i1 - 1];
@@ -153,7 +200,53 @@ function findMath() {
     y = yEnd;
   }
   grow(found, cursorRow);
-  return found;
+  return joinRows(found);
+}
+
+// Math renders narrower than its LaTeX, which left wide gaps before the text that follows it. On a row where
+// one-row matches are followed by more text, one overlay covers the row from the first match to the end of
+// its text, and lays out the math at its fitted width with the text between and after it redrawn (same
+// colors and attributes) right behind it. The real cells stay underneath for selection and copy.
+function joinRows(found) {
+  const b = term.buffer.active;
+  const byRow = new Map();
+  for (const f of found) if (f.rows === 1 && !f.wrapped) byRow.set(f.y, [...(byRow.get(f.y) || []), f]);
+  const out = found.filter((f) => !byRow.has(f.y) || f.rows !== 1 || f.wrapped);
+  for (const [y, ms] of byRow) {
+    ms.sort((p, q) => p.x0 - q.x0);
+    const line = b.getLine(b.viewportY + y);
+    const last = ms[ms.length - 1];
+    // End at the row's last text, or before an editor's vertical split.
+    let x1 = last.x1;
+    for (let x = last.x1; x < term.cols; x++) {
+      const ch = line.getCell(x)?.getChars() || ' ';
+      if (ch === '│') break;
+      if (ch !== ' ') x1 = x + 1;
+    }
+    if (x1 === last.x1) { out.push(...ms); continue; } // nothing after the math: no gap to close
+    const parts = [];
+    const text = (a, z) => {
+      const runs = [];
+      for (let x = a; x < z; x++) {
+        const c = line.getCell(x);
+        if (!c || c.getWidth() === 0) continue;
+        const st = { fg: cellColor(c, true), bg: cellColor(c, false), b: !!c.isBold(), i: !!c.isItalic(),
+          u: !!c.isUnderline(), d: !!c.isDim(), s: '' };
+        const prev = runs[runs.length - 1];
+        if (prev && ['fg', 'bg', 'b', 'i', 'u', 'd'].every((k) => prev[k] === st[k])) prev.s += c.getChars() || ' ';
+        else runs.push({ ...st, s: c.getChars() || ' ' });
+      }
+      if (runs.length) parts.push({ runs, cols: z - a });
+    };
+    ms.forEach((m, k) => {
+      parts.push({ tex: m.tex, display: m.display, cols: m.x1 - m.x0, up: m.y - m.top, span: m.span,
+        fg: m.c ? cellColor(m.c, true) : term.options.theme.foreground });
+      text(m.x1, k + 1 < ms.length ? ms[k + 1].x0 : x1);
+    });
+    const bg = ms[0].c ? cellColor(ms[0].c, false) : term.options.theme.background;
+    out.push({ joined: true, y, top: y, x0: ms[0].x0, x1, parts, bg, key: JSON.stringify([x1 - ms[0].x0, bg, parts]) });
+  }
+  return out;
 }
 
 // Give each match `top`/`span`: its rows plus empty rows around it (no text under it, not the cursor row,
@@ -163,13 +256,16 @@ function grow(found, cursorRow) {
   const b = term.buffer.active;
   const taken = new Set();
   for (const f of found) for (let k = 0; k < f.rows; k++) taken.add(f.y + k);
+  const left = new Map(); // row -> leftmost one-row match: math on that row can be shifted as far as this
+  for (const f of found) if (f.rows === 1 && !f.wrapped) left.set(f.y, Math.min(left.get(f.y) ?? f.x0, f.x0));
   const free = (y, x0, x1) => y >= 0 && y < term.rows && y !== cursorRow && !taken.has(y) &&
     (b.getLine(b.viewportY + y)?.translateToString(true, x0, x1) ?? '').trim() === '';
   for (const f of found) {
     const last = f.y + f.rows - 1;
+    const x0 = f.rows === 1 && !f.wrapped ? left.get(f.y) : f.x0;
     let up = 0, down = 0;
-    while (up < 2 * MAX_GROW && free(f.y - 1 - up, f.x0, f.x1)) up++;
-    while (down < 2 * MAX_GROW && free(last + 1 + down, f.x0, f.x1)) down++;
+    while (up < 2 * MAX_GROW && free(f.y - 1 - up, x0, f.x1)) up++;
+    while (down < 2 * MAX_GROW && free(last + 1 + down, x0, f.x1)) down++;
     up = Math.min(MAX_GROW, taken.has(f.y - 1 - up) ? Math.ceil(up / 2) : up);
     down = Math.min(MAX_GROW, taken.has(last + 1 + down) ? Math.floor(down / 2) : down);
     if (!f.display) up = down = Math.min(up, down);
@@ -178,7 +274,46 @@ function grow(found, cursorRow) {
   }
 }
 
+// A joined row (see joinRows): math and text laid out left to right, each part right after the previous.
+function makeJoined(item, cw, ch) {
+  const el = document.createElement('div');
+  el.className = 'auto-math';
+  Object.assign(el.style, {
+    left: `${item.x0 * cw}px`, top: `${item.top * ch}px`, width: `${(item.x1 - item.x0) * cw}px`,
+    height: `${ch}px`, background: item.bg,
+  });
+  autoLayer.appendChild(el);
+  let x = 0;
+  for (const p of item.parts) {
+    const inner = document.createElement('div');
+    inner.style.left = `${x}px`;
+    el.appendChild(inner);
+    if (p.runs) {
+      inner.className = 'auto-text';
+      Object.assign(inner.style, { font: `${term.options.fontSize}px ${term.options.fontFamily}`, lineHeight: `${ch}px` });
+      for (const r of p.runs) {
+        const sp = document.createElement('span');
+        sp.textContent = r.s;
+        Object.assign(sp.style, { color: r.fg, background: r.bg, fontWeight: r.b ? 'bold' : '',
+          fontStyle: r.i ? 'italic' : '', textDecoration: r.u ? 'underline' : '', opacity: r.d ? 0.5 : '' });
+        inner.appendChild(sp);
+      }
+      x += p.cols * cw;
+    } else {
+      const html = katexHtml(p.tex, p.display);
+      inner.innerHTML = html;
+      inner.style.color = p.fg;
+      // grown math stays centered on this row, so it may extend past the 1-row box
+      const maxH = p.span === 1 ? ch * INLINE_OVERFLOW : (p.span - 2 * GROW_MARGIN) * ch;
+      fitInk(inner, p.cols * cw, maxH);
+      x += Math.min(p.cols * cw, inner.getBoundingClientRect().width);
+    }
+  }
+  return el;
+}
+
 function makeOverlay(item, cw, ch) {
+  if (item.joined) return makeJoined(item, cw, ch);
   const html = katexHtml(item.tex, item.display);
   if (!html) return null;
   const el = document.createElement('div');
@@ -241,30 +376,43 @@ setInterval(checkIgnore, 500);
 let scanQueued = false;
 function scan() {
   scanQueued = false;
-  const want = new Map();
+  const old = autoEls;
+  autoEls = new Map();
   if (autoMath && !ignoredBy) {
     const [cw, ch] = cellSize();
     for (const it of findMath()) {
-      const key = [it.top, it.span, it.y, it.rows, it.x0, it.x1, it.display, it.tex, it.c && cellColor(it.c, true),
-        it.c && cellColor(it.c, false), cw, ch].join('|');
-      want.set(key, it);
+      // Position is left out so that scrolling moves existing overlays instead of rebuilding them.
+      const key = it.key ? `${it.key}|${cw}|${ch}` : [it.span, it.y - it.top, it.rows, it.x1 - it.x0, it.pad, it.display, it.tex,
+        it.c && cellColor(it.c, true), it.c && cellColor(it.c, false), cw, ch].join('|');
+      const pool = old.get(key) || [];
+      let i = pool.findIndex((o) => o.top === it.top && o.x0 === it.x0);
+      if (i < 0) i = pool.length - 1;
+      let o = i >= 0 ? pool.splice(i, 1)[0] : null;
+      if (o) {
+        Object.assign(o.el.style, { left: `${it.x0 * cw}px`, top: `${it.top * ch}px` });
+      } else {
+        const el = makeOverlay(it, cw, ch);
+        if (!el) continue;
+        o = { el };
+      }
+      o.top = it.top; o.x0 = it.x0;
+      autoEls.set(key, [...(autoEls.get(key) || []), o]);
     }
-    for (const [key, el] of autoEls) if (!want.has(key)) { el.remove(); autoEls.delete(key); }
-    for (const [key, it] of want) {
-      if (autoEls.has(key)) continue;
-      const el = makeOverlay(it, cw, ch);
-      if (el) autoEls.set(key, el);
-    }
-  } else {
-    for (const el of autoEls.values()) el.remove();
-    autoEls.clear();
   }
+  for (const pool of old.values()) for (const o of pool) o.el.remove();
 }
 function queueScan() {
   if (!scanQueued) { scanQueued = true; requestAnimationFrame(scan); }
 }
 
-term.onRender(queueScan);
+term.onRender(scan); // same frame as xterm's paint, so overlays never lag the text by a frame
+// Overlays are measured when built and then reused, so ones built before KaTeX's fonts arrived (fallback
+// glyphs) would keep the wrong width. Rebuild everything once they're in.
+katexFonts.then(() => {
+  for (const pool of autoEls.values()) for (const o of pool) o.el.remove();
+  autoEls.clear();
+  queueScan();
+});
 term.onScroll(queueScan);
 term.onResize(queueScan);
 term.onCursorMove(queueScan);

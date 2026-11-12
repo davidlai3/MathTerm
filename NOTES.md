@@ -131,6 +131,38 @@ bin/mdv --test     # mdv self-check
 
 ## Changelog
 
+### 2026-11-11: close gaps after inline math
+- **Joined rows** (`joinRows`/`makeJoined` in `automath.js`): on a row where one-row matches are followed by
+  more text, one overlay covers it from the first match to the end of its text (or a `│` split). Each
+  formula is drawn at its fitted width and the text between and after is redrawn right behind it, with each
+  cell's colors, bold/italic/underline/dim. Real cells stay underneath for selection and copy. Rows with
+  nothing after the math keep the per-match overlay.
+- `grow()` checks rows above/below from the row's leftmost match, since later math on a joined row shifts left.
+- **KaTeX font bug (older than this):** KaTeX's `@font-face` fonts load lazily on first use, so overlays built
+  before that were measured with fallback glyphs and kept the wrong size (they're cached). WebKit here never
+  fires `loadingdone`. `renderer.js` now loads every KaTeX face at startup (`katexFonts`); auto-detect rebuilds
+  its overlays when that resolves. Before, the error just disappeared into the gaps.
+- Gotcha: redrawn text needs `white-space: pre`; `nowrap` strips each run's leading space.
+- Verified by screenshot: `\operatorname{Re}(s) = 1`, `\mathbb{C}`, `\sigma`/`\gamma` mid-sentence and colored/bold/
+  italic text after math all sit flush.
+
+### 2026-11-11: scroll flicker, `\cmd!` unescape
+- Cursor-row skip only applies while the cursor is visible (DECTCEM `?25h/l`, tracked by a CSI handler since
+  xterm doesn't expose it). TUIs like Claude Code hide it while redrawing, so their rows no longer flip raw.
+- Scan runs synchronously in `onRender` (inside xterm's paint frame) instead of the next rAF, so overlays
+  never lag scrolled text by a frame.
+- Overlays are keyed without position and moved on scroll instead of rebuilt.
+- Fence state starts from up to 200 rows above the viewport (`FENCE_LOOKBACK`; normal buffer only).
+- **`$$` pairing (the actual cause in the user's screenshot):** the viewport's top row was the *closing* `$$` of a
+  block that started off-screen. It paired with the next opener, shifting every pair below: prose was
+  taken as block bodies (KaTeX rejects them, so raw) and the real bodies were skipped. `pairBlocks` now
+  pairs both ways (first `$$` as opener, or as a stray closer) and keeps the pairing whose bodies parse.
+- `\sin!` / `O!` -> `\sin\!` / `O\!` (`unstrip`): Claude Code drops the backslash of `\!`.
+- Verified by screenshot: hidden-cursor row typeset, `\sin!\left(` renders without "!", and a recreation of
+  the user's screen (alt screen, viewport starting inside a block) renders every block and inline span.
+- Seen, not fixed: glyphs of the source text can overhang the overlay's left edge by ~1px (a faint bar left
+  of an indented block).
+
 ### 2026-11-11: auto-detect ignore list
 - `autoDetectIgnore` globs in config.json (default `*.tex`, `*.sty`, `*.cls`: LaTeX sources usually have a PDF
   next to them). Matched against the foreground process's arguments and the window title. The status bar
@@ -271,43 +303,25 @@ Roughly in priority order:
 
 The mode exists (see "Auto-detect mode" above). Still to do:
 
-- **BUG (user report): equations flip between rendered and raw while scrolling a Claude Code chat.**
-  The "Jump to bottom" hint means Claude Code was scrolling in its own full-screen view, redrawing every row
-  each step. Likely causes, in rough order:
-  1. *Cursor-row skip.* TUIs move the cursor around while they draw, so whichever row it's on when a scan
-     runs shows raw. Fix: only skip the cursor row while the cursor is visible (DECTCEM) and the program
-     looks like an editor, or keep the previous state for a frame.
-  2. *Delimiters off-screen.* A multi-row `$$`/`\[` block whose opening or closing row has scrolled out of
-     the viewport no longer matches. Fence state is tracked from the viewport's top row, so when a ```
-     scrolls off, everything below inverts (code gets typeset, math gets skipped). Fix: also scan some rows
-     above and below the viewport (scrollback for the normal buffer; not possible on the alt screen, where
-     the program only draws what's visible).
-  3. *Position-keyed overlays.* Every scroll step changes every key, so all overlays are destroyed and rebuilt
-     (KaTeX HTML is cached, but layout and fit run again). That can show a raw frame in between. Fix: key by
-     row text + column, reuse elements by moving them, and drop an overlay only after its row actually changed.
+- **Scroll flicker in Claude Code: fixed for `$$` blocks cut off at the top** (see changelog). Still open: a
+  block cut off at the top shows its partial body raw; a `\[` block whose `\[` is off-screen; on the alt
+  screen there's no scrollback to recover fence state from.
 - **BUG (user report, screenshot): Claude Code strips backslash escapes before punctuation.** Its markdown
   renderer treats `\,` `\!` `\;` `\{` `\}` `\\` as escapes, so `\sin\!\left(` arrives as `\sin!\left(`, and
   `\frac12 s(s-1)\,\pi^{-s/2}` arrives as `...(s-1),\pi...` (rendered as a literal "!" and ","). This answers the
   open question about Claude Code: text-mode `$..$` and `$$..$$` survive, but punctuation escapes don't.
-  Possible mitigations: drop a lone `!` right after a command name (`\sin!` -> `\sin`), or turn `)(,`/`),\` into
-  thin spaces. Both are guesses about what was meant; also worth asking whether Claude Code can be told
-  not to unescape inside math.
-- **Large gaps after inline math (user screenshot).** Same root cause as "Tight fit" below, just very visible
-  with wide sources: `\operatorname{Re}(s) > 1`, `\mathbb{C}` and `\sin(\pi s/2)` render far narrower than their
-  LaTeX, leaving 10-25 blank columns. Idea for a real fix: when a match is followed by text on the same row,
-  overlay the rest of the row as well and re-draw that text (cloned from the cells, with their colors and
-  bold/italic) shifted left to close the gap. Selection and copy would still use the real cells. Cost: the
-  overlay must be rebuilt whenever that row changes, and it can't help when the gap is at the row's end
-  (nothing to shift, so nothing is wrong there).
+  `\cmd!` is now restored to `\cmd\!`. `\,` `\{` `\\` are left alone (`,\alpha` and `{x}` are often meant
+  literally). Worth asking whether Claude Code can be told not to unescape inside math.
+- **Gaps after inline math: fixed by joined rows** (see changelog). Left: on a soft-wrapped line the shifted
+  row ends early but the next row isn't pulled up, so a word the terminal split (`f` / `or`) stays split
+  with a gap after it. Fixing that means reflowing the whole logical line.
 - **Claude Code, partly verified** (user screenshot): one-line `$$..$$` display math survives its markdown
   rendering with backslashes and `_` intact. Still unchecked: inline `$..$` and `\(..\)`. In that sample the
   model wrote inline math as Unicode (`Yₙ`) rather than LaTeX.
 - **Code without fences.** TUIs that render code blocks without backticks (Claude Code included) give no hint,
   so `$var$`-like text inside them can be typeset. Possible heuristic: skip rows whose cells share a
   code-block background color.
-- **Tight fit.** Inline math leaves a gap where the source was wider. Inline math with text directly above
-  and below has only its row (+25%).
-  Can't reserve space in someone else's layout; could center instead of left-align if that reads better.
+- **Tight fit.** Inline math with text directly above and below has only its row.
 - Stacked equations with no blank row between them get no extra room and stay small. Wrapped inline math
   (sharing rows with prose) is still skipped.
 
