@@ -12,7 +12,7 @@ one extra escape sequence, **OSC 7777**. A program prints the LaTeX inside that 
 terminal draws the typeset math over the cells the program reserved. A query form lets the program ask
 how many cells an expression needs first, so the layout is exact.
 
-The included `mdv` tool uses this to print markdown files with their `$...$` and `$$...$$` math rendered.
+The included `mdv` tool uses this to print styled markdown files with their `$...$` and `$$...$$` math rendered.
 Any program can do the same. See [NOTES.md](NOTES.md#protocol-osc-7777) for the protocol.
 
 ## Install and run
@@ -29,23 +29,25 @@ npm start
 Inside mathterm, `mdv` is on your `PATH`:
 
 ```sh
-mdv notes.md                         # print a markdown file with its math rendered
+mdv notes.md                         # print a styled markdown file with its math rendered
 echo 'Euler: $e^{i\pi}+1=0$' | mdv   # or read from stdin
 ```
 
-Outside mathterm, or with output redirected, `mdv` prints the file unchanged.
+In other terminals `mdv` still styles the markdown and leaves the math as LaTeX source.
+With output redirected (`mdv f.md > out`) it prints the file unchanged.
 
 ## Status
 
 Early prototype. What works:
 
 - Inline and display math in markdown, sized by the terminal and centered.
-- `$5`-style dollar amounts and fenced code blocks are left alone.
+- Markdown styling: headings, bold/italic/strikethrough, inline and fenced code, lists, quotes, rules, links.
+- `$5`-style dollar amounts, code spans and code blocks are never treated as math.
 
 Known gaps:
 
 - Inline fractions render small, because inline math stays within one row (+25%).
-- Markdown other than math prints raw.
+- Tables print raw. Code blocks have no syntax highlighting. Long lines aren't re-wrapped.
 - Resizing the window misplaces math that's already on screen.
 
 The full plan and changelog are in [NOTES.md](NOTES.md).

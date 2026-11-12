@@ -11,7 +11,7 @@ A terminal that typesets LaTeX natively (KaTeX, vector text) instead of approxim
 | `ui/renderer.js` | xterm.js terminal + the OSC 7777 handler: measures and draws KaTeX as xterm decorations. Talks to Rust via `window.__TAURI__` (`withGlobalTauri`). |
 | `ui/index.html` | Loads xterm.js, KaTeX, and styles for overlays / the measuring probe. |
 | `ui/vendor/` | Copied from `node_modules` by `npm run vendor` (runs on `postinstall`). Gitignored. |
-| `bin/mdv` | Python (stdlib only). Prints markdown, turning `$..$` / `$$..$$` into OSC 7777. |
+| `bin/mdv` | Python (stdlib only). Styles markdown with ANSI and turns `$..$` / `$$..$$` into OSC 7777. Math and code spans are swapped for private-use placeholders before styling, so the styling regexes never touch them. |
 | `demo.md` | Sample file for manual / screenshot checks. |
 
 Tauri (not Electron): ~10 MB instead of ~200 MB, native WebKit webview, and Rust for the pty and any later
@@ -44,11 +44,23 @@ npm run shot       # launch, run `mdv demo.md`, screenshot just the window to sh
 bin/mdv --test     # mdv self-check
 ```
 
-- Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (after 5s,
-  `screencapture -R` the window's rect to that path, then quit).
+- Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (after 5s, focus
+  the window and `screencapture -l <window id>` to that path, then quit). It briefly steals focus, because
+  WebKit doesn't paint occluded windows and the capture comes out blank otherwise.
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: markdown styling in mdv
+- `mdv` styles headings (h1 magenta with a rule, h2+ blue), bold, italic (`*` and `_`, but not snake_case),
+  strikethrough, inline code, fenced code blocks (fences dropped, indented), lists (`•`), quotes (`│`),
+  horizontal rules, links (`text (url)`) and images (`[image: alt]`).
+- Code spans and code blocks are never math (`` `$x$` `` stays code).
+- It now also styles in other terminals, leaving math as LaTeX source there. Redirected output is still unchanged.
+- Display math reuses the source's line breaks, so there are no extra blank lines around `$$..$$`.
+- `npm run shot` captures by window id (`-l`, via `objc2` for `windowNumber`) after focusing the window.
+  The `-R` rect capture had picked up the app switcher and other windows.
+- Demo and `docs/demo.png` updated to show every style.
 
 ### 2026-11-11: inline overflow, README
 - Inline math may now spill 25% past its row (`INLINE_OVERFLOW` in `renderer.js`) before shrinking, so
@@ -82,8 +94,8 @@ Roughly in priority order:
 
 1. **Inline fractions are small.** Inline math now gets 1.25 rows, which covers superscripts. Next option if
    fractions bother us: give inline math 2 rows when its scale would drop below ~0.7 (cost: uneven line spacing).
-2. **Rest of markdown.** `mdv` only handles math; headings, bold, lists and code print raw. Options: ANSI
-   styling in `mdv` itself, or pipe through glow for the non-math parts.
+2. **Markdown gaps.** Tables print raw. Code blocks have no syntax highlighting (pygments isn't stdlib).
+   Links aren't clickable (would need OSC 8 + an xterm.js link handler + Tauri's opener plugin).
 3. **Resize / reflow.** Decorations keep their original x and line, so window resizes misalign them.
    Re-render on resize, or drop math whose line reflowed.
 4. **Line wrap.** Inline math that straddles the right edge is clipped. `mdv` could wrap the text itself.

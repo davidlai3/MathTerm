@@ -1795,6 +1795,7 @@ dependencies = [
 name = "mathterm"
 version = "0.0.1"
 dependencies = [
+ "objc2",
  "portable-pty",
  "tauri",
  "tauri-build",

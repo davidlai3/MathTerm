@@ -88,14 +88,15 @@ fn shot_after_delay(app: AppHandle, path: String) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(5));
         if let Some(w) = app.get_webview_window("main") {
-            // it can open behind other windows, and screencapture -R grabs whatever is on top
-            let _ = w.set_always_on_top(true);
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            let s = w.scale_factor().unwrap_or(1.0);
-            let pos = w.inner_position().unwrap().to_logical::<f64>(s);
-            let size = w.inner_size().unwrap().to_logical::<f64>(s);
-            let rect = format!("{},{},{},{}", pos.x, pos.y, size.width, size.height);
-            let _ = std::process::Command::new("screencapture").args(["-x", "-R", &rect, &path]).status();
+            // WebKit doesn't paint occluded windows, so bring it forward first. Capturing by window id (-l)
+            // keeps other windows or system UI that's on top out of the shot.
+            let _ = w.set_focus();
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            let ns = w.ns_window().unwrap() as *const objc2::runtime::AnyObject;
+            let id: isize = unsafe { objc2::msg_send![&*ns, windowNumber] };
+            let _ = std::process::Command::new("screencapture")
+                .args(["-x", "-o", "-l", &id.to_string(), &path])
+                .status();
         }
         app.exit(0);
     });
