@@ -75,6 +75,7 @@ For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). 
   read cell by cell (with a string-index to cell-column map, so wide characters line up) and matched for
   `$..$`, `$$..$$`, `\(..\)`, `\[..\]` with `mdv`'s `$` rules. Rows that are only `$$` or `\[` (optionally
   after an editor line number) open a multi-row block, up to 30 rows.
+- **Display math** is centered on the window when nothing else shares its rows (`centerDisplay`).
 - **Growing:** a match may take up to `MAX_GROW` (3) empty rows above and below it (empty under its columns,
   not the cursor row, not another match). Display math uses all of them; inline math grows symmetrically so
   it stays centered on its text row. Grown math keeps `GROW_MARGIN` (0.25 row) clear top and bottom.
@@ -133,6 +134,13 @@ bin/mdv --test     # mdv self-check
   restart `npm start` after changing it.
 
 ## Changelog
+
+### 2026-11-12: display math centered on the window
+- `centerDisplay` in `automath.js`: auto-detected display math (multi-row blocks, one-line `$$..$$`, wrapped
+  lines) is centered on the window like `mdv`'s, when its rows (grown ones included) hold nothing else.
+  A line-number gutter may sit to the left; the math is centered in the rest. Otherwise (a split, text
+  beside `$$..$$`) it keeps its source position, since the overlay is opaque.
+- Verified by screenshot with `cat` (block, one-line, indented list block, shared row, wrapped line) and nvim.
 
 ### 2026-11-12: markdown tables in auto-detect
 - `tableAt` in `automath.js`: same rules as `mdv` (a row with `|`, a `TABLE_SEP` row, then rows while they

@@ -243,7 +243,32 @@ function findMath() {
     y = yEnd;
   }
   grow(found, cursorRow);
+  centerDisplay(found);
   return joinRows(found);
+}
+
+// Display math is centered on the window (as mdv's is) when its rows, grown ones included, hold nothing
+// else. An editor's line-number gutter may sit to the left: it stays visible and the math is centered in
+// the rest. Anything else on those rows (a split, text beside a one-line $$..$$) keeps the source position.
+function centerDisplay(found) {
+  const b = term.buffer.active;
+  for (const f of found) {
+    if (!f.display) continue;
+    const src0 = f.wrapped ? f.pad : f.x0; // wrapped lines already span the row; their source starts at pad
+    let gutter = 0, ok = true;
+    for (let y = f.top; ok && y < f.top + f.span; y++) {
+      const line = b.getLine(b.viewportY + y);
+      const left = line?.translateToString(true, 0, src0) ?? '';
+      const right = line?.translateToString(true, f.x1, term.cols) ?? '';
+      ok = /^\s*\d*\s*$/.test(left) && !right.trim();
+      gutter = Math.max(gutter, left.trimEnd().length);
+    }
+    if (!ok) continue;
+    f.x0 = gutter ? gutter + 1 : 0;
+    f.x1 = term.cols;
+    f.pad = 0;
+    f.centered = true;
+  }
 }
 
 // Math renders narrower than its LaTeX, which left wide gaps before the text that follows it. On a row where
@@ -450,6 +475,7 @@ function makeOverlay(item, cw, ch) {
     inner.style.transform = `translate(-50%, -50%) scale(${s})`;
   } else {
     fitInk(inner, (item.x1 - item.x0) * cw - pad, maxH); // from renderer.js: fit and center by ink height
+    if (item.centered) inner.style.left = `${((item.x1 - item.x0) * cw - inner.getBoundingClientRect().width) / 2}px`;
   }
   return el;
 }
