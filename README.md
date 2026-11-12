@@ -32,8 +32,10 @@ Requires macOS, Node, Rust (`brew install rust`) and Python 3.
 
 ```sh
 npm install
-npm start
+npm run app    # builds mathterm.app and installs it in /Applications
 ```
+
+`npm start` runs it from source instead (dev mode).
 
 ## Config
 
@@ -59,6 +61,9 @@ nvim's `set title`, switching files with `:e` is picked up as well.
 
 | Keys | |
 |---|---|
+| Cmd-N / Cmd-W | New / close window |
+| Cmd-F | Find in scrollback (Enter / Shift-Enter: next / previous, Esc: close) |
+| Ctrl-Cmd-F or Fn-F | Full screen |
 | Cmd-+ / Cmd-- / Cmd-0 | Zoom in / out / reset |
 | Cmd-Shift-M | Toggle math detection |
 | Cmd-click | Open a link (hover shows the URL) |

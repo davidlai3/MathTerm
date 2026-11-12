@@ -1,5 +1,4 @@
 const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
 const pty = {
   write: (data) => invoke('write', { data }),
   resize: (cols, rows) => invoke('resize', { cols, rows }),
@@ -22,6 +21,48 @@ const statusBar = document.getElementById('status');
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(document.getElementById('term'));
+// Type right away: on launch, and when switching back to the window (Cmd-Tab), without clicking in first.
+term.focus();
+window.addEventListener('focus', () => (findBox.hidden ? term : findInput).focus());
+
+// Cmd-F: find in scrollback. Enter / Shift-Enter step through matches, Esc closes.
+const search = new SearchAddon.SearchAddon();
+term.loadAddon(search);
+const findBox = document.getElementById('find');
+const findInput = findBox.querySelector('input');
+const findCount = findBox.querySelector('.count');
+// The addon marks the active match by selecting it, and the selection is drawn over decorations. Focus is in
+// the find box, so that's xterm's *inactive* selection: it's made orange while the box is open.
+const ACTIVE_MATCH = '#d08770';
+const FIND_OPTS = { decorations: { matchBackground: '#6b5a24', matchOverviewRuler: '#6b5a24',
+  activeMatchBackground: ACTIVE_MATCH, activeMatchColorOverviewRuler: ACTIVE_MATCH } };
+const setActiveMatchColor = (c) => { term.options.theme = { ...term.options.theme, selectionInactiveBackground: c }; };
+search.onDidChangeResults(({ resultIndex, resultCount }) => {
+  findCount.textContent = !findInput.value ? '' : resultCount ? `${resultIndex + 1}/${resultCount}` : 'none';
+});
+function openFind() {
+  setActiveMatchColor(ACTIVE_MATCH);
+  findBox.hidden = false;
+  findInput.focus();
+  findInput.select();
+}
+function closeFind() {
+  setActiveMatchColor(undefined);
+  findBox.hidden = true;
+  search.clearDecorations();
+  term.focus();
+}
+findInput.addEventListener('input', () => {
+  if (findInput.value) search.findNext(findInput.value, { ...FIND_OPTS, incremental: true });
+  else { search.clearDecorations(); findCount.textContent = ''; }
+});
+findInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeFind();
+  else if (e.key === 'Enter' && findInput.value) {
+    (e.shiftKey ? search.findPrevious : search.findNext).call(search, findInput.value, FIND_OPTS);
+  } else return;
+  e.preventDefault();
+});
 
 function flash(msg, ms = 1500) {
   statusBar.textContent = msg;
@@ -80,6 +121,8 @@ function applyConfig(text) {
 const keyBindings = [
   (e) => e.metaKey && (e.key === '=' || e.key === '+') && (setFontSize(term.options.fontSize + 1), true),
   (e) => e.metaKey && e.key === '-' && (setFontSize(term.options.fontSize - 1), true),
+  (e) => e.metaKey && !e.shiftKey && e.key === 'n' && (invoke('new_window'), true),
+  (e) => e.metaKey && !e.shiftKey && e.key === 'f' && (openFind(), true),
   (e) => e.metaKey && e.key === '0' && (setFontSize(baseFontSize), true),
 ];
 term.attachCustomKeyEventHandler((e) => !(e.type === 'keydown' && keyBindings.some((k) => k(e))));
@@ -89,7 +132,8 @@ term.onData(pty.write);
 // at the final size and the first prompt isn't lost.
 Promise.all([
   invoke('config').then(applyConfig, () => applyConfig('')),
-  listen('pty', (e) => term.write(e.payload)),
+  // this window's shell only (a global `listen` would also get other windows' output)
+  window.__TAURI__.webviewWindow.getCurrentWebviewWindow().listen('pty', (e) => term.write(e.payload)),
 ]).then(() => invoke('start', { cols: term.cols, rows: term.rows }));
 
 // Hidden element used to measure rendered KaTeX in pixels.

@@ -65,7 +65,7 @@ raw:    ESC ] 7777 ; raw ; <len> BEL                    (next len cells are lite
   sets `--font-size` (KaTeX overlays and the measuring probe) and re-places drawn math (`relayout`).
   Auto-detect overlays rebuild on their own, since cell size is part of their key.
 - Keybindings: xterm allows one custom key handler, so `renderer.js` owns it and features push onto
-  `keyBindings` (auto-detect's Cmd-Shift-M does).
+  `keyBindings` (auto-detect's Cmd-Shift-M does). Cmd-N calls the Rust `new_window` command.
 
 ## Auto-detect mode (`ui/automath.js`)
 
@@ -106,6 +106,7 @@ Needs Rust (`brew install rust`) and Node.
 ```sh
 npm install        # also copies vendor files into ui/
 npm start          # tauri dev: build + run
+npm run app        # release .app, installed to /Applications
 npm run shot       # launch, run `mdv demo.md`, screenshot just the window to shot.png, quit
 npm run shot:docs  # same at 900x1010, saved as docs/demo.png for the README
 bin/mdv --test     # mdv self-check
@@ -127,9 +128,52 @@ bin/mdv --test     # mdv self-check
   SyntaxError and the whole script, and so the terminal, never runs.
 - Gotcha: xterm sets an inline `display: block` on decoration elements, so CSS `display: flex` on them is
   ignored. Overlay children are absolutely positioned instead.
-- `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
+- App icon: `src-tauri/icons/icon.png` (1024px) and `icon.icns`, both written by `make_icon.py` (Pillow, KaTeX's
+  own fonts) on the macOS grid (824px rounded square, transparent margin). Embedded at compile time, so
+  restart `npm start` after changing it.
 
 ## Changelog
+
+### 2026-11-12: Cmd-F find
+- Find bar (`@xterm/addon-search`, vendored like the other addons): incremental, Enter / Shift-Enter to
+  step, Esc to close, match count. The addon marks the active match by *selecting* it, and the selection
+  is drawn over its decorations; with focus in the find box that's the inactive selection, so its color
+  is set to the active-match orange while the bar is open.
+- Cmd-W (close window) and Ctrl-Cmd-F (full screen) come from Tauri's default macOS menu (File, View);
+  xterm doesn't consume Cmd combos, so they reach it. Not pressed in testing (no keyboard in shot mode).
+- Fn-F: the web view takes the key before macOS can map it to the menu's Enter Full Screen, and WebKit
+  doesn't expose Fn to the page (a JS `getModifierState('Fn')` check never fired). `fn_f_fullscreen` in
+  `main.rs` installs an AppKit local key monitor that toggles full screen on Fn-F and swallows the key.
+- Ctrl-D not closing was the user's zsh, not mathterm: vi mode binds `^D` to `list-choices` in viins.
+  `bindkey -M viins '^D' delete-char-or-list` restores exit-on-empty-line. Shell exit does close its window
+  (checked with `exit`).
+
+### 2026-11-12: Cmd-N new window, focus on launch
+- One shell per window: `Session` is a map keyed by window label, and `write`/`resize`/`foreground` act on
+  the calling window. Output is sent with `emit_to` to its own window, and the frontend listens through
+  `getCurrentWebviewWindow().listen` (a global `listen` also receives events sent to other windows).
+- A shell exiting closes only its window (the app quits after the last one); closing a window drops its
+  pty, which hangs up the shell. New windows cascade 24px down-right from the current one.
+- Gotchas: `capabilities/default.json` listed only `"main"`, so new windows couldn't call `start` (no shell,
+  no error shown); now `"*"`. New windows need `background_throttling(Disabled)` like the config's window,
+  or an off-screen window stops painting while another exists (broke shot mode).
+- The terminal takes focus on launch and when the window regains focus.
+- Verified with a temporary hook opening a second window in shot mode: two shells on separate ttys, and
+  the main window shows only its own output. Cmd-N itself and closing windows weren't exercised.
+
+### 2026-11-12: real Mac app
+- `npm run app`: `tauri build` (`.app` bundle only) and copy to `/Applications`. Ad-hoc signed
+  (`signingIdentity: "-"`), so it runs on this machine; distributing it would need a Developer ID + notarization.
+- `mdv` ships as a resource (`Contents/Resources/bin`). Release builds put that on PATH; debug builds keep
+  the source tree's `bin/` so edits apply without a rebuild.
+- `LANG=en_US.UTF-8` when unset: apps started from Finder get no LANG and zsh/nvim fall back to ASCII.
+- **Release-only CSP bug:** Tauri adds hashes for the page's inline `<style>` to the CSP in release builds,
+  and with hashes present browsers ignore `'unsafe-inline'`, so the `<style>` elements xterm creates at
+  runtime were blocked (black Times text, broken KaTeX). `dangerousDisableAssetCspModification: ["style-src"]`.
+  Dev builds don't do this, so check `npm run app` output after touching styles or the CSP.
+- Icon: `make_icon.py` also writes `icon.icns` (via `iconutil`).
+- Verified with the release binary under `env -i` (Finder-like env): bundled `mdv` found, LANG set, UTF-8
+  and math render.
 
 ### 2026-11-11: lineHeight config, lone-row overflow, README screenshots
 - `"lineHeight"` in config.json (default 1.2).
@@ -355,5 +399,4 @@ Auto-detect typesets math in the editor itself. For a fully styled page (heading
 2. **Line wrap.** Inline math that straddles the right edge is clipped. `mdv` could wrap the text itself.
 3. **Selection / copy.** Copying a math region yields spaces. Could put the LaTeX source on the clipboard.
 4. **`tex` one-liner** (`tex '\sqrt{2}'`) and a shell hook so normal command output can contain math.
-5. Later: tabs/splits, config (font, theme), packaging as a `.app` (needs `bin/` bundled as a resource,
-   real icons, `bundle.active = true`). Splits are covered by the live-preview goal above.
+5. Later: tabs/splits (covered by the live-preview goal above).

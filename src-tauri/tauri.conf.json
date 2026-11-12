@@ -8,8 +8,15 @@
     "withGlobalTauri": true,
     "windows": [{ "title": "mathterm", "width": 900, "height": 600, "backgroundThrottling": "disabled" }],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ipc: http://ipc.localhost",
+      "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
-  "bundle": { "active": false }
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "resources": { "../bin/mdv": "bin/mdv" },
+    "macOS": { "signingIdentity": "-" }
+  }
 }

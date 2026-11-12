@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "start": "tauri dev",
-    "vendor": "mkdir -p ui/vendor && cp node_modules/@xterm/xterm/lib/xterm.js node_modules/@xterm/xterm/css/xterm.css node_modules/@xterm/addon-fit/lib/addon-fit.js node_modules/katex/dist/katex.min.js node_modules/katex/dist/katex.min.css ui/vendor/ && cp -R node_modules/katex/dist/fonts ui/vendor/",
+    "app": "tauri build && rm -rf /Applications/mathterm.app && cp -R src-tauri/target/release/bundle/macos/mathterm.app /Applications/",
+    "vendor": "mkdir -p ui/vendor && cp node_modules/@xterm/xterm/lib/xterm.js node_modules/@xterm/xterm/css/xterm.css node_modules/@xterm/addon-fit/lib/addon-fit.js node_modules/@xterm/addon-search/lib/addon-search.js node_modules/katex/dist/katex.min.js node_modules/katex/dist/katex.min.css ui/vendor/ && cp -R node_modules/katex/dist/fonts ui/vendor/",
     "postinstall": "npm run vendor",
     "shot": "MATHTERM_SHOT=$PWD/shot.png MATHTERM_INIT=\"clear; mdv $PWD/demo.md; touch \\$MATHTERM_SHOT.ready\" tauri dev",
     "shot:docs": "MATHTERM_SHOT=$PWD/docs/demo.png MATHTERM_SHOT_SIZE=900x1010 MATHTERM_INIT=\"sleep 3; clear; mdv $PWD/demo.md; touch \\$MATHTERM_SHOT.ready\" tauri dev && MATHTERM_SHOT=$PWD/docs/nvim.png MATHTERM_SHOT_SIZE=900x700 MATHTERM_INIT=\"sleep 3; (sleep 3; touch \\$MATHTERM_SHOT.ready) & disown; nvim --clean -c 'set number' +20 $PWD/demo.md\" tauri dev"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^6.0.0",
     "katex": "^0.19.1"
   },

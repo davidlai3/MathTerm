@@ -27,6 +27,12 @@
               white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: var(--status-bg); color: var(--fg);
               font: 12px -apple-system, sans-serif; pointer-events: none; z-index: 10; }
     #status[hidden] { display: none; }
+    #find { position: fixed; top: 8px; right: 12px; z-index: 10; display: flex; align-items: center; gap: 8px;
+            padding: 4px 8px; border-radius: 6px; background: var(--status-bg); color: var(--fg);
+            font: 12px -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
+    #find[hidden] { display: none; }
+    #find input { width: 200px; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; }
+    #find .count { color: var(--dim); min-width: 3em; text-align: right; }
     .rule { pointer-events: none; }
     .rule::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--dim); }
     .rule-h1::after { top: calc(50% - 2px); border-top: 3px double var(--h1); }
@@ -35,8 +41,10 @@
 <body>
   <div id="term"></div>
   <div id="status" hidden></div>
+  <div id="find" hidden><input placeholder="Find" spellcheck="false"><span class="count"></span></div>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/addon-search.js"></script>
   <script src="vendor/katex.min.js"></script>
   <script src="themes.js"></script>
   <script src="renderer.js"></script>
