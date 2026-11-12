@@ -91,10 +91,16 @@ def highlight(code, lang):
         return simple_highlight(code, lang)
 
 
-def code_block(block):
+def raw(n, in_mathterm):
+    """OSC 7777;raw: the next n cells are literal, so mathterm's auto-detect won't typeset `$x$` in code."""
+    return f"\033]7777;raw;{n}\a" if in_mathterm and n else ""
+
+
+def code_block(block, in_mathterm):
     first, *lines = block.split("\n")
-    lang = first[3:].strip().lower()
-    return "\n".join("  " + l for l in highlight("\n".join(lines[:-1]), lang).split("\n"))  # drop the fences
+    lang, lines = first[3:].strip().lower(), lines[:-1]  # drop the fences
+    shown = highlight("\n".join(lines), lang).split("\n")
+    return "\n".join(f"  {raw(len(src), in_mathterm)}{hl}" for src, hl in zip(lines, shown))
 
 
 def cells(row):
@@ -195,7 +201,7 @@ def render(text, width, sizer=None):
     out = []
     for i, part in enumerate(parts):
         if i % 2:
-            out.append(code_block(part))
+            out.append(code_block(part, in_mt))
             continue
         lines, res, j = part.split("\n"), [], 0
         while j < len(lines):
@@ -210,7 +216,8 @@ def render(text, width, sizer=None):
             res += ["", styled, ""] if tall(lines[j]) else [styled]
             j += 1
         out.append("\n".join(res))
-    s = CODE_PH.sub(lambda m: CODE_ON + codes[int(m.group(1))] + FG_OFF, "".join(out))
+    s = CODE_PH.sub(lambda m: raw(len(codes[int(m.group(1))]), in_mt) + CODE_ON + codes[int(m.group(1))] + FG_OFF,
+                    "".join(out))
 
     def emit(m):
         n = int(m.group(1))
@@ -242,8 +249,11 @@ def test():
     assert render("a $x^2$ b", 80) == "a $x^2$ b"  # no sizer: math left as source
     assert guess_sizes([("a \\\\ b", True)]) == [(5, 4)]
     # code is never math or styled
-    assert render("```\n$x$ **y**\n```", 80, fixed) == f"  {CODE_ON}$x$ **y**{FG_OFF}"
-    assert render("`$x$`", 80, fixed) == f"{CODE_ON}$x${FG_OFF}"
+    assert render("```\n$x$ **y**\n```", 80) == f"  {CODE_ON}$x$ **y**{FG_OFF}"
+    assert render("`$x$`", 80) == f"{CODE_ON}$x${FG_OFF}"
+    # inside mathterm, code is marked literal so auto-detect leaves it alone
+    assert render("```\n$x$ **y**\n```", 80, fixed) == f"  \033]7777;raw;9\a{CODE_ON}$x$ **y**{FG_OFF}"
+    assert render("`$x$`", 80, fixed) == f"\033]7777;raw;3\a{CODE_ON}$x${FG_OFF}"
     # styling
     assert render("## Hi", 80) == "\033[1;34mHi\033[0m"
     assert render("**b** and *i*", 80) == "\033[1mb\033[22m and \033[3mi\033[23m"

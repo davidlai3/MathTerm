@@ -110,20 +110,25 @@ function place(item) {
   });
 }
 
-function draw(fields) {
+// Anchor at the cursor: a marker on the first row of its logical line + the column within that line.
+function anchor() {
   const b = term.buffer.active;
   const y = b.baseY + b.cursorY;
   let start = y;
   while (start > 0 && b.getLine(start)?.isWrapped) start--;
-  const item = {
-    ...fields,
-    marker: term.registerMarker(start - y),
-    offset: (y - start) * term.cols + b.cursorX,
-  };
+  return { marker: term.registerMarker(start - y), offset: (y - start) * term.cols + b.cursorX };
+}
+
+function draw(fields) {
+  const item = { ...fields, ...anchor() };
   if (!item.marker) return;
   items.push(item);
   place(item);
 }
+
+// Literal-text spans (OSC 7777;raw;<len>): auto-detect (automath.js) never typesets these cells.
+// `mdv` marks code with them, since styled code has no backticks left to recognize it by.
+const rawSpans = [];
 
 // ponytail: re-renders every item's KaTeX on each resize; cache the rendered HTML if long scrollback gets slow
 term.onResize(() => {
@@ -137,6 +142,7 @@ term.onResize(() => {
 //   query:  OSC 7777 ; ? ; <i|d> ; <latex> BEL      -> reply OSC 7777 ; = ; <cols> ; <rows> BEL
 //   draw:   OSC 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL   (inline rows > 1 = tall, see TALL_SCALE)
 //   rule:   OSC 7777 ; rule ; <h1|hr> BEL                     (full-width line on the current row)
+//   raw:    OSC 7777 ; raw ; <len> BEL                        (next len cells are literal: no auto-detect)
 term.parser.registerOscHandler(7777, (payload) => {
   let m = /^\?;([id]);([\s\S]*)$/.exec(payload);
   if (m) {
@@ -147,6 +153,12 @@ term.parser.registerOscHandler(7777, (payload) => {
   m = /^(\d+);(\d+);([id]);([\s\S]*)$/.exec(payload);
   if (m) {
     draw({ tex: m[4], display: m[3] === 'd', cols: +m[1], rows: +m[2] });
+    return true;
+  }
+  m = /^raw;(\d+)$/.exec(payload);
+  if (m) {
+    const a = anchor();
+    if (a.marker) rawSpans.push({ ...a, len: +m[1] });
     return true;
   }
   m = /^rule;(h1|hr)$/.exec(payload);

@@ -16,6 +16,11 @@
     .math-probe { position: absolute; top: 0; left: 0; visibility: hidden;
                   display: inline-block; white-space: nowrap; font-size: 14px; }
     .math .katex-display, .math-probe .katex-display { margin: 0; }
+    .auto-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
+    .auto-math { position: absolute; font-size: 14px; }
+    .auto-math > div { position: absolute; left: 0; top: 50%; white-space: nowrap; transform-origin: left center; }
+    .auto-math.block > div { left: 50%; transform-origin: center; }
+    .auto-math .katex-display { margin: 0; }
     #status { position: fixed; left: 6px; bottom: 6px; max-width: 80%; overflow: hidden; text-overflow: ellipsis;
               white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: #333; color: #ccc;
               font: 12px -apple-system, sans-serif; pointer-events: none; z-index: 10; }
@@ -32,5 +37,6 @@
   <script src="vendor/addon-fit.js"></script>
   <script src="vendor/katex.min.js"></script>
   <script src="renderer.js"></script>
+  <script src="automath.js"></script>
 </body>
 </html>

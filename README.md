@@ -36,6 +36,10 @@ echo 'Euler: $e^{i\pi}+1=0$' | mdv   # or read from stdin
 
 Links are clickable: hover to see the URL, Cmd-click to open it.
 
+**Auto-detect:** LaTeX in *any* program's output is typeset too. That includes `cat notes.md`, Claude
+Code's replies, and math inside nvim while you edit, where the line under the cursor shows the source
+so you can change it. Cmd-Shift-M toggles it.
+
 In other terminals `mdv` still styles the markdown and leaves the math as LaTeX source.
 With output redirected (`mdv f.md > out`) it prints the file unchanged.
 
@@ -50,6 +54,8 @@ Early prototype. What works:
 - Tables with borders and column alignment (math in cells is sized correctly).
 - Syntax-highlighted code blocks (pygments if installed, otherwise a built-in highlighter).
 - Clickable links.
+- Auto-detect mode: typesets `$...$`, `$$...$$`, `\(...\)` and `\[...\]` found anywhere on screen, with
+  editor-friendly behavior (cursor line shows source, code is skipped).
 - `$5`-style dollar amounts, code spans and code blocks are never treated as math.
 
 Known gaps:
@@ -60,9 +66,8 @@ Known gaps:
 
 ## Roadmap
 
-- **Auto-detect mode:** typeset LaTeX in any program's output with no cooperation from the program. That
-  covers Claude Code printing plain `$...$`, and math inside nvim while you edit (the cursor line shows the
-  source).
+- **Auto-detect polish:** verify against Claude Code's markdown rendering, and skip code blocks that TUIs
+  draw without backticks.
 - **Live preview:** `mdv --watch` in a split pane, for the fully styled page beside your editor.
 
 The full plan and changelog are in [NOTES.md](NOTES.md).

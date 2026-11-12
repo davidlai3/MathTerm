@@ -106,7 +106,7 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
     }
     std::thread::spawn(move || {
         if let Some(w) = app.get_webview_window("main") {
-            // MATHTERM_SHOT_SIZE=WxH resizes 2s in (shot at 5s). Print before that to test reflow, or
+            // MATHTERM_SHOT_SIZE=WxH resizes 2s in (shot at 6s). Print before that to test reflow, or
             // `sleep 3` in MATHTERM_INIT to print at the new size.
             std::thread::sleep(std::time::Duration::from_secs(2));
             let size = std::env::var("MATHTERM_SHOT_SIZE").ok();
@@ -115,7 +115,7 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
                     let _ = w.set_size(tauri::LogicalSize::new(sw, sh));
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            std::thread::sleep(std::time::Duration::from_secs(4));
             // capture by window id (-l): works off-screen and never includes other windows
             let ns = w.ns_window().unwrap() as *const objc2::runtime::AnyObject;
             let id: isize = unsafe { objc2::msg_send![&*ns, windowNumber] };

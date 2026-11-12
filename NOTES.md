@@ -9,6 +9,7 @@ A terminal that typesets LaTeX natively (KaTeX, vector text) instead of approxim
 | `src-tauri/src/main.rs` | Tauri backend. `start` spawns the login shell in a pty (`portable-pty`) and streams its output to the window as `pty` events (UTF-8 split across reads is carried over). `write` / `resize` commands go the other way. Sets `MATHTERM=1` and puts `bin/` on `PATH`. |
 | `src-tauri/tauri.conf.json` | Window, CSP, and `frontendDist = ui/`. |
 | `ui/renderer.js` | xterm.js terminal + the OSC 7777 handler: measures and draws KaTeX as xterm decorations. Talks to Rust via `window.__TAURI__` (`withGlobalTauri`). |
+| `ui/automath.js` | Auto-detect mode: scans the viewport for LaTeX in any program's output and overlays typeset math on the source cells. Toggle with Cmd-Shift-M. |
 | `ui/index.html` | Loads xterm.js, KaTeX, and styles for overlays / the measuring probe. |
 | `ui/vendor/` | Copied from `node_modules` by `npm run vendor` (runs on `postinstall`). Gitignored. |
 | `bin/mdv` | Python (stdlib; pygments optional). Styles markdown with ANSI and turns `$..$` / `$$..$$` into OSC 7777. Math and code spans are swapped for private-use placeholders and the math is sized first; then lines are styled (tables need math widths), and placeholders are expanded last. |
@@ -25,6 +26,7 @@ query:  ESC ] 7777 ; ? ; <i|d> ; <latex> BEL           (program -> terminal)
 reply:  ESC ] 7777 ; = ; <cols> ; <rows> BEL            (terminal -> program, on its stdin/tty)
 draw:   ESC ] 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL
 rule:   ESC ] 7777 ; rule ; <h1|hr> BEL                 (full-width line on the current row)
+raw:    ESC ] 7777 ; raw ; <len> BEL                    (next len cells are literal: never auto-detected)
 ```
 
 - `i` = inline, `d` = display.
@@ -36,6 +38,8 @@ rule:   ESC ] 7777 ; rule ; <h1|hr> BEL                 (full-width line on the 
 - Links are standard OSC 8 hyperlinks (`ESC ] 8 ;; url ESC \ text ESC ] 8 ;; ESC \`). mathterm shows the URL in a
   status bar on hover and opens it on Cmd-click via the `open_url` command, which only accepts `https://`,
   `http://` and `mailto:` (links can come from any program's output).
+- `raw` spans are anchored like drawn math (marker + offset, so they survive re-wrap). `mdv` sends one before
+  every code span and code-block line.
 - `rule` lines are drawn by the terminal at the current width, so they never wrap. Outside mathterm,
   `mdv` falls back to `═`/`─` characters.
 - `draw` overlays KaTeX on a `cols x rows` box at the cursor. The **sender** reserves the space:
@@ -43,6 +47,23 @@ rule:   ESC ] 7777 ; rule ; <h1|hr> BEL                 (full-width line on the 
 - LaTeX must not contain newlines, ESC or BEL (mdv collapses whitespace).
 - Replies arrive in query order. `mdv` sends all queries in one batch, reads replies from `/dev/tty` in raw
   mode with a 1s timeout, and falls back to guessed sizes if they don't all arrive.
+
+## Auto-detect mode (`ui/automath.js`)
+
+For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). On by default; Cmd-Shift-M toggles.
+
+- After every render, scroll, resize or cursor move (coalesced to one per animation frame), every viewport row is
+  read cell by cell (with a string-index to cell-column map, so wide characters line up) and matched for
+  `$..$`, `$$..$$`, `\(..\)`, `\[..\]` with `mdv`'s `$` rules. Rows that are only `$$` or `\[` (optionally
+  after an editor line number) open a multi-row block, up to 30 rows.
+- A match becomes an absolutely positioned overlay covering exactly the source's cells, using the source cell's
+  foreground/background (default palette, 256-color cube or RGB, honoring inverse). Math is scaled to fit,
+  with inline allowed `INLINE_OVERFLOW`.
+- Skipped: the cursor row, and any block containing it (so you can edit the source); rows inside ``` fences
+  (tracked from the top of the viewport); matches inside `inline code` (odd backtick count before them);
+  cells marked `raw`; anything KaTeX fails to parse; matches crossing `│` (editor splits).
+- Overlays are keyed by position + tex + colors + cell size and diffed each scan. KaTeX HTML is cached by
+  tex, so steady screens and blinking cursors cost only the row scan.
 
 ## Dev
 
@@ -57,12 +78,13 @@ bin/mdv --test     # mdv self-check
 ```
 
 - Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (screenshot to that
-  path after 5s, then quit), `MATHTERM_SHOT_SIZE=WxH` (resize 2s in, shot at 5s: print before that to test reflow, or put `sleep 3`
+  path after 5s, then quit), `MATHTERM_SHOT_SIZE=WxH` (resize 2s in, shot at 6s: print before that to test reflow, or put `sleep 3`
   in `MATHTERM_INIT` to print at the new size).
 - Shot mode never touches the screen. The window is parked off-screen, the app uses the Accessory
   activation policy (no Dock icon, no focus steal), and the capture is `screencapture -l <window id>`.
   This relies on `backgroundThrottling: "disabled"` in `tauri.conf.json`: without it, WebKit stops painting
   a window that isn't visible (e.g. when you click away) and the shot comes out blank or missing.
+- The window sometimes captures blank (no text at all), roughly 1 run in 6. Rerun.
 - Gotcha: don't name a top-level `const` after a `window` property (`status`, `name`, ...). WebKit throws a
   SyntaxError and the whole script, and so the terminal, never runs.
 - Gotcha: xterm sets an inline `display: block` on decoration elements, so CSS `display: flex` on them is
@@ -70,6 +92,15 @@ bin/mdv --test     # mdv self-check
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: auto-detect mode
+- New `ui/automath.js`: typesets LaTeX found anywhere on screen, with no program cooperation. Verified with
+  `cat demo.md` (inline, multi-row `$$` blocks, math in table cells; `$5`/`$10` untouched) and with
+  `nvim --clean -c 'set number' demo.md`: line numbers are handled, math takes nvim's background, the
+  cursor's row and a `$$` block containing the cursor show source.
+- New `OSC 7777;raw;<len>`: `mdv` marks code spans and code-block lines literal, because its styled code has
+  no backticks for auto-detect to recognize. Without it, `$x$` in code was typeset.
+- Shot hook takes the capture at 6s (was 5s): `sleep 3` in `MATHTERM_INIT` plus shell startup could miss it.
 
 ### 2026-11-11: tables, syntax highlighting, clickable links
 - **Tables:** GFM tables (header row + `|---|:-:|--:|` separator) render with box-drawing borders, a bold
@@ -153,31 +184,23 @@ bin/mdv --test     # mdv self-check
 
 Roughly in priority order:
 
-### Goal: render LaTeX in any program's output, including editors (next up)
+### Auto-detect: remaining work
 
-An **auto-detect mode** (toggleable) where the terminal itself scans rendered rows for `$..$`, `$$..$$`,
-`\(..\)`, `\[..\]` and overlays typeset math on the source's own cells. Programs don't cooperate:
-this covers Claude Code and other CLIs printing plain LaTeX, and **math inside nvim/vim/helix while
-editing**, with no editor plugin.
+The mode exists (see "Auto-detect mode" above). Still to do:
 
-- **Placement:** math must fit the rectangle the source text occupies (no reserved space, since the program
-  owns the layout). LaTeX source is usually wider than its rendering, so this mostly works. Shrink to fit
-  otherwise. Multi-line `$$` blocks get the rows they span; a one-line display `$$..$$` gets one row.
-- **Editing:** the cursor row (and any block containing it) shows the raw source, like Obsidian's live preview.
-- **Redraws:** TUIs (Claude Code, nvim) redraw constantly. Overlays are screen-positioned (viewport row/col),
-  recomputed for the viewport after each render and diffed by key, with KaTeX output cached, so unchanged
-  math isn't re-rendered.
-- **Editor layout:** matches can't cross a vertical split border (`│`). Soft-wrapped math that spans rows
-  is missed. Line numbers and the sign column are harmless.
-- **False positives:** use `mdv`'s rules (no space inside `$`, closing `$` not followed by a digit) and require
-  KaTeX to parse without error.
-- **Copy:** the cells still hold the source, so copying math yields LaTeX for free.
-- To check: how Claude Code's markdown renderer treats backslashes, `_` and `*` in its output. Markdown
-  could eat `\(`, `\\` or underscores before the terminal ever sees them.
+- **Verify inside Claude Code.** Check how its markdown renderer treats `\(`, `\\`, `_` and `*` in model
+  output. Markdown may eat backslashes or turn `a_1 + b_1` into italics before the terminal sees it, and
+  that would need extra detection rules.
+- **Code without fences.** TUIs that render code blocks without backticks (Claude Code included) give no hint,
+  so `$var$`-like text inside them can be typeset. Possible heuristic: skip rows whose cells share a
+  code-block background color.
+- **Tight fit.** Inline math leaves a gap where the source was wider, and tall math has only its row (+25%).
+  Can't reserve space in someone else's layout; could center instead of left-align if that reads better.
+- Soft-wrapped math (a match split across rows) isn't detected.
 
-### Goal: full live preview (after auto-detect)
+### Goal: full live preview
 
-Auto-detect only typesets math. For a fully styled page (headings, tables) beside the editor:
+Auto-detect typesets math in the editor itself. For a fully styled page (headings, tables) beside the editor:
 
 1. **`mdv --watch <file>`.** Re-render on change, on the alternate screen so each frame replaces the last.
    Needs a protocol op to clear drawn items (`OSC 7777;clear`).
