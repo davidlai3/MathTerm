@@ -271,6 +271,34 @@ Roughly in priority order:
 
 The mode exists (see "Auto-detect mode" above). Still to do:
 
+- **BUG (user report): equations flip between rendered and raw while scrolling a Claude Code chat.**
+  The "Jump to bottom" hint means Claude Code was scrolling in its own full-screen view, redrawing every row
+  each step. Likely causes, in rough order:
+  1. *Cursor-row skip.* TUIs move the cursor around while they draw, so whichever row it's on when a scan
+     runs shows raw. Fix: only skip the cursor row while the cursor is visible (DECTCEM) and the program
+     looks like an editor, or keep the previous state for a frame.
+  2. *Delimiters off-screen.* A multi-row `$$`/`\[` block whose opening or closing row has scrolled out of
+     the viewport no longer matches. Fence state is tracked from the viewport's top row, so when a ```
+     scrolls off, everything below inverts (code gets typeset, math gets skipped). Fix: also scan some rows
+     above and below the viewport (scrollback for the normal buffer; not possible on the alt screen, where
+     the program only draws what's visible).
+  3. *Position-keyed overlays.* Every scroll step changes every key, so all overlays are destroyed and rebuilt
+     (KaTeX HTML is cached, but layout and fit run again). That can show a raw frame in between. Fix: key by
+     row text + column, reuse elements by moving them, and drop an overlay only after its row actually changed.
+- **BUG (user report, screenshot): Claude Code strips backslash escapes before punctuation.** Its markdown
+  renderer treats `\,` `\!` `\;` `\{` `\}` `\\` as escapes, so `\sin\!\left(` arrives as `\sin!\left(`, and
+  `\frac12 s(s-1)\,\pi^{-s/2}` arrives as `...(s-1),\pi...` (rendered as a literal "!" and ","). This answers the
+  open question about Claude Code: text-mode `$..$` and `$$..$$` survive, but punctuation escapes don't.
+  Possible mitigations: drop a lone `!` right after a command name (`\sin!` -> `\sin`), or turn `)(,`/`),\` into
+  thin spaces. Both are guesses about what was meant; also worth asking whether Claude Code can be told
+  not to unescape inside math.
+- **Large gaps after inline math (user screenshot).** Same root cause as "Tight fit" below, just very visible
+  with wide sources: `\operatorname{Re}(s) > 1`, `\mathbb{C}` and `\sin(\pi s/2)` render far narrower than their
+  LaTeX, leaving 10-25 blank columns. Idea for a real fix: when a match is followed by text on the same row,
+  overlay the rest of the row as well and re-draw that text (cloned from the cells, with their colors and
+  bold/italic) shifted left to close the gap. Selection and copy would still use the real cells. Cost: the
+  overlay must be rebuilt whenever that row changes, and it can't help when the gap is at the row's end
+  (nothing to shift, so nothing is wrong there).
 - **Claude Code, partly verified** (user screenshot): one-line `$$..$$` display math survives its markdown
   rendering with backslashes and `_` intact. Still unchecked: inline `$..$` and `\(..\)`. In that sample the
   model wrote inline math as Unicode (`Yₙ`) rather than LaTeX.
