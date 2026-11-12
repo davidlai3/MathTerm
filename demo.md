@@ -25,7 +25,20 @@ $$
 
 ---
 
+| Function | Derivative | Note |
+|----------|:----------:|-----:|
+| $x^n$ | $n x^{n-1}$ | power rule |
+| $e^x$ | $e^x$ | its own derivative |
+| `sin` | $\cos x$ | **trig** |
+
 ```python
 def f(x):  # $not_math$ in code
-    return x ** 2
+    return x ** 2 + 1.5
+```
+
+```rust
+fn main() {
+    let msg = "hello"; // comment
+    println!("{msg} {}", 42);
+}
 ```

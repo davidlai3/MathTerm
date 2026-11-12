@@ -16,6 +16,10 @@
     .math-probe { position: absolute; top: 0; left: 0; visibility: hidden;
                   display: inline-block; white-space: nowrap; font-size: 14px; }
     .math .katex-display, .math-probe .katex-display { margin: 0; }
+    #status { position: fixed; left: 6px; bottom: 6px; max-width: 80%; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: #333; color: #ccc;
+              font: 12px -apple-system, sans-serif; pointer-events: none; z-index: 10; }
+    #status[hidden] { display: none; }
     .rule { pointer-events: none; }
     .rule::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid #666; }
     .rule-h1::after { top: calc(50% - 2px); border-top: 3px double #b16fbd; }
@@ -23,6 +27,7 @@
 </head>
 <body>
   <div id="term"></div>
+  <div id="status" hidden></div>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
   <script src="vendor/katex.min.js"></script>

@@ -83,6 +83,17 @@ fn resize(session: State<Session>, cols: u16, rows: u16) {
     }
 }
 
+/// Open an OSC 8 link in the default handler. Links come from arbitrary program output (`cat`-ing a file
+/// is enough), so only web and mail URLs are allowed. The prefix check also rules out `open` option injection.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !["https://", "http://", "mailto:"].iter().any(|p| url.starts_with(p)) {
+        return Err(format!("refusing to open {url}"));
+    }
+    std::thread::spawn(move || std::process::Command::new("open").arg(url).status());
+    Ok(())
+}
+
 /// dev hook: screenshot just this window to $MATHTERM_SHOT after a few seconds, then quit.
 /// The window is parked off-screen and the app never activates, so it doesn't interrupt whoever is using
 /// the machine. That works because background throttling is disabled (tauri.conf.json): WebKit keeps
@@ -95,15 +106,16 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
     }
     std::thread::spawn(move || {
         if let Some(w) = app.get_webview_window("main") {
-            // MATHTERM_SHOT_SIZE=WxH resizes before the shot, to check how math is re-placed after reflow
-            std::thread::sleep(std::time::Duration::from_secs(4));
+            // MATHTERM_SHOT_SIZE=WxH resizes 2s in (shot at 5s). Print before that to test reflow, or
+            // `sleep 3` in MATHTERM_INIT to print at the new size.
+            std::thread::sleep(std::time::Duration::from_secs(2));
             let size = std::env::var("MATHTERM_SHOT_SIZE").ok();
             if let Some((sw, sh)) = size.as_deref().and_then(|s| s.split_once('x')) {
                 if let (Ok(sw), Ok(sh)) = (sw.parse::<f64>(), sh.parse::<f64>()) {
                     let _ = w.set_size(tauri::LogicalSize::new(sw, sh));
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(3));
             // capture by window id (-l): works off-screen and never includes other windows
             let ns = w.ns_window().unwrap() as *const objc2::runtime::AnyObject;
             let id: isize = unsafe { objc2::msg_send![&*ns, windowNumber] };
@@ -124,7 +136,7 @@ fn main() {
             Ok(())
         })
         .manage(Session::default())
-        .invoke_handler(tauri::generate_handler![start, write, resize])
+        .invoke_handler(tauri::generate_handler![start, write, resize, open_url])
         .run(tauri::generate_context!())
         .expect("error while running mathterm");
 }

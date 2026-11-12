@@ -17,7 +17,8 @@ Any program can do the same. See [NOTES.md](NOTES.md#protocol-osc-7777) for the 
 
 ## Install and run
 
-Requires macOS, Node, Rust (`brew install rust`) and Python 3.
+Requires macOS, Node, Rust (`brew install rust`) and Python 3. Optional: `pip3 install pygments` for
+better syntax highlighting in code blocks.
 
 ```sh
 npm install
@@ -33,6 +34,8 @@ mdv notes.md                         # print a styled markdown file with its mat
 echo 'Euler: $e^{i\pi}+1=0$' | mdv   # or read from stdin
 ```
 
+Links are clickable: hover to see the URL, Cmd-click to open it.
+
 In other terminals `mdv` still styles the markdown and leaves the math as LaTeX source.
 With output redirected (`mdv f.md > out`) it prints the file unchanged.
 
@@ -43,13 +46,23 @@ Early prototype. What works:
 - Inline and display math in markdown, sized by the terminal. Display math is centered, and tall inline
   math (nested fractions, sums with limits) gets extra line spacing.
 - Math and rules follow their text when the window is resized and lines re-wrap.
-- Markdown styling: headings, bold/italic/strikethrough, inline and fenced code, lists, quotes, rules, links.
+- Markdown styling: headings, bold/italic/strikethrough, inline code, lists, quotes, rules.
+- Tables with borders and column alignment (math in cells is sized correctly).
+- Syntax-highlighted code blocks (pygments if installed, otherwise a built-in highlighter).
+- Clickable links.
 - `$5`-style dollar amounts, code spans and code blocks are never treated as math.
 
 Known gaps:
 
-- Tables print raw. Code blocks have no syntax highlighting. Long lines aren't re-wrapped.
+- Tables wider than the window wrap and break their borders. Long lines aren't re-wrapped.
 - Text printed before a resize keeps its original line spacing. For example, tall inline math shrinks to
   one row instead of gaining space if its line re-wraps.
+
+## Roadmap
+
+- **Auto-detect mode:** typeset LaTeX in any program's output with no cooperation from the program. That
+  covers Claude Code printing plain `$...$`, and math inside nvim while you edit (the cursor line shows the
+  source).
+- **Live preview:** `mdv --watch` in a split pane, for the fully styled page beside your editor.
 
 The full plan and changelog are in [NOTES.md](NOTES.md).

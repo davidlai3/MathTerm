@@ -11,7 +11,7 @@ A terminal that typesets LaTeX natively (KaTeX, vector text) instead of approxim
 | `ui/renderer.js` | xterm.js terminal + the OSC 7777 handler: measures and draws KaTeX as xterm decorations. Talks to Rust via `window.__TAURI__` (`withGlobalTauri`). |
 | `ui/index.html` | Loads xterm.js, KaTeX, and styles for overlays / the measuring probe. |
 | `ui/vendor/` | Copied from `node_modules` by `npm run vendor` (runs on `postinstall`). Gitignored. |
-| `bin/mdv` | Python (stdlib only). Styles markdown with ANSI and turns `$..$` / `$$..$$` into OSC 7777. Math and code spans are swapped for private-use placeholders before styling, so the styling regexes never touch them. |
+| `bin/mdv` | Python (stdlib; pygments optional). Styles markdown with ANSI and turns `$..$` / `$$..$$` into OSC 7777. Math and code spans are swapped for private-use placeholders and the math is sized first; then lines are styled (tables need math widths), and placeholders are expanded last. |
 | `demo.md` | Sample file for manual / screenshot checks. |
 
 Tauri (not Electron): ~10 MB instead of ~200 MB, native WebKit webview, and Rust for the pty and any later
@@ -33,6 +33,9 @@ rule:   ESC ] 7777 ; rule ; <h1|hr> BEL                 (full-width line on the 
   centered on its row with up to 3 rows of height). On every placement the terminal checks that the rows
   above and below are empty under the math; if not (e.g. wrapped text after a resize), it fits one row.
 - Display math is centered by the terminal (x is ignored), which keeps it centered after a resize.
+- Links are standard OSC 8 hyperlinks (`ESC ] 8 ;; url ESC \ text ESC ] 8 ;; ESC \`). mathterm shows the URL in a
+  status bar on hover and opens it on Cmd-click via the `open_url` command, which only accepts `https://`,
+  `http://` and `mailto:` (links can come from any program's output).
 - `rule` lines are drawn by the terminal at the current width, so they never wrap. Outside mathterm,
   `mdv` falls back to `═`/`─` characters.
 - `draw` overlays KaTeX on a `cols x rows` box at the cursor. The **sender** reserves the space:
@@ -49,20 +52,38 @@ Needs Rust (`brew install rust`) and Node.
 npm install        # also copies vendor files into ui/
 npm start          # tauri dev: build + run
 npm run shot       # launch, run `mdv demo.md`, screenshot just the window to shot.png, quit
+npm run shot:docs  # same at 900x1010, saved as docs/demo.png for the README
 bin/mdv --test     # mdv self-check
 ```
 
 - Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (screenshot to that
-  path after 5s, then quit), `MATHTERM_SHOT_SIZE=WxH` (resize before the shot, to test reflow).
+  path after 5s, then quit), `MATHTERM_SHOT_SIZE=WxH` (resize 2s in, shot at 5s: print before that to test reflow, or put `sleep 3`
+  in `MATHTERM_INIT` to print at the new size).
 - Shot mode never touches the screen. The window is parked off-screen, the app uses the Accessory
   activation policy (no Dock icon, no focus steal), and the capture is `screencapture -l <window id>`.
   This relies on `backgroundThrottling: "disabled"` in `tauri.conf.json`: without it, WebKit stops painting
   a window that isn't visible (e.g. when you click away) and the shot comes out blank or missing.
+- Gotcha: don't name a top-level `const` after a `window` property (`status`, `name`, ...). WebKit throws a
+  SyntaxError and the whole script, and so the terminal, never runs.
 - Gotcha: xterm sets an inline `display: block` on decoration elements, so CSS `display: flex` on them is
   ignored. Overlay children are absolutely positioned instead.
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: tables, syntax highlighting, clickable links
+- **Tables:** GFM tables (header row + `|---|:-:|--:|` separator) render with box-drawing borders, a bold
+  header and column alignment. Column widths use visible width: ANSI is stripped, and math counts as its
+  measured cell width, which is why math is now sized before styling. Pipes inside math or code spans don't
+  split cells. Tall math in a cell gets bordered spacer rows instead of blank lines.
+- **Syntax highlighting:** fenced blocks with a language use pygments (`monokai`) if it's installed; otherwise
+  a built-in highlighter colors comments (`#` or `//` and `/* */` by language), strings, numbers and common
+  keywords. Blocks without a language keep the plain code color.
+- **Links:** `[text](url)` is an OSC 8 hyperlink everywhere (iTerm2 supports these too). In mathterm the
+  `(url)` suffix is dropped: hovering shows the URL in a status bar and Cmd-click opens it (`open_url` in
+  Rust, http(s)/mailto only). Plain clicks still select text.
+- Shot hook: resize moved to 2s in. Added `npm run shot:docs`.
+- Bug hit along the way: `const status` shadowed `window.status`, WebKit threw, and the terminal was blank.
 
 ### 2026-11-11: rough edges: tall overlap, rules, screenshots
 - **Tall inline math vs. re-wrapped text:** `place()` checks the rows above/below for text under the math
@@ -132,10 +153,46 @@ bin/mdv --test     # mdv self-check
 
 Roughly in priority order:
 
-1. **Markdown gaps.** Tables print raw. Code blocks have no syntax highlighting (pygments isn't stdlib).
-   Links aren't clickable (would need OSC 8 + an xterm.js link handler + Tauri's opener plugin).
+### Goal: render LaTeX in any program's output, including editors (next up)
+
+An **auto-detect mode** (toggleable) where the terminal itself scans rendered rows for `$..$`, `$$..$$`,
+`\(..\)`, `\[..\]` and overlays typeset math on the source's own cells. Programs don't cooperate:
+this covers Claude Code and other CLIs printing plain LaTeX, and **math inside nvim/vim/helix while
+editing**, with no editor plugin.
+
+- **Placement:** math must fit the rectangle the source text occupies (no reserved space, since the program
+  owns the layout). LaTeX source is usually wider than its rendering, so this mostly works. Shrink to fit
+  otherwise. Multi-line `$$` blocks get the rows they span; a one-line display `$$..$$` gets one row.
+- **Editing:** the cursor row (and any block containing it) shows the raw source, like Obsidian's live preview.
+- **Redraws:** TUIs (Claude Code, nvim) redraw constantly. Overlays are screen-positioned (viewport row/col),
+  recomputed for the viewport after each render and diffed by key, with KaTeX output cached, so unchanged
+  math isn't re-rendered.
+- **Editor layout:** matches can't cross a vertical split border (`│`). Soft-wrapped math that spans rows
+  is missed. Line numbers and the sign column are harmless.
+- **False positives:** use `mdv`'s rules (no space inside `$`, closing `$` not followed by a digit) and require
+  KaTeX to parse without error.
+- **Copy:** the cells still hold the source, so copying math yields LaTeX for free.
+- To check: how Claude Code's markdown renderer treats backslashes, `_` and `*` in its output. Markdown
+  could eat `\(`, `\\` or underscores before the terminal ever sees them.
+
+### Goal: full live preview (after auto-detect)
+
+Auto-detect only typesets math. For a fully styled page (headings, tables) beside the editor:
+
+1. **`mdv --watch <file>`.** Re-render on change, on the alternate screen so each frame replaces the last.
+   Needs a protocol op to clear drawn items (`OSC 7777;clear`).
+2. **Native splits in mathterm.** Editor on one side, preview on the other. tmux isn't a shortcut: it
+   swallows unknown OSCs and repaints the whole screen, which breaks line-anchored overlays.
+3. **Tiny nvim plugin, only if needed.** E.g. send the buffer on `TextChanged` so the preview updates per
+   keystroke rather than per `:w`, sync scroll, or hide math for all of insert mode.
+
+### Smaller items
+
+1. **Markdown gaps.** Tables wider than the window wrap and break their borders (could shrink columns or
+   wrap cell text). Escaped `\|` in table cells isn't handled. Bare URLs aren't clickable (xterm's web-links
+   addon would do it). Nested blockquotes, numbered-list styling and footnotes print mostly raw.
 2. **Line wrap.** Inline math that straddles the right edge is clipped. `mdv` could wrap the text itself.
 3. **Selection / copy.** Copying a math region yields spaces. Could put the LaTeX source on the clipboard.
 4. **`tex` one-liner** (`tex '\sqrt{2}'`) and a shell hook so normal command output can contain math.
 5. Later: tabs/splits, config (font, theme), packaging as a `.app` (needs `bin/` bundled as a resource,
-   real icons, `bundle.active = true`).
+   real icons, `bundle.active = true`). Splits are covered by the live-preview goal above.

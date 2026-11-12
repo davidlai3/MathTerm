@@ -15,20 +15,40 @@ MATH_PH = re.compile("\ue000(\\d+)\ue001")
 CODE_PH = re.compile("\ue002(\\d+)\ue003")
 
 CODE_ON, FG_OFF = "\033[38;5;180m", "\033[39m"
+DIM, DIM_OFF, BOLD, BOLD_OFF = "\033[2m", "\033[22m", "\033[1m", "\033[22m"
+ANSI = re.compile(r"\033\[[0-9;]*m|\033\]8;;[^\033]*\033\\")  # SGR + OSC 8 links (zero-width)
+LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 INLINE_STYLES = [
     (re.compile(r"!\[([^\]]*)\]\([^)]*\)"), "\033[2m[image: \\1]\033[22m"),
-    (re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)"), "\033[4;34m\\1\033[24;39m \033[2m(\\2)\033[22m"),
     (re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*"), "\033[1m\\1\033[22m"),
     (re.compile(r"(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])"), "\033[3m\\1\033[23m"),
     (re.compile(r"(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)"), "\033[3m\\1\033[23m"),  # snake_case is safe
     (re.compile(r"~~(.+?)~~"), "\033[9m\\1\033[29m"),
 ]
+TABLE_SEP = re.compile(r"\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
 
 
-def style_line(line, width, term_rules):
-    """term_rules: inside mathterm, rules are drawn by the terminal (OSC 7777;rule) so they track resizes."""
+def inline(text, in_mathterm):
+    """Inline markdown. Links are OSC 8 hyperlinks; mathterm makes them clickable and shows the URL on hover,
+    so the "(url)" suffix is only printed elsewhere."""
+    for rx, rep in INLINE_STYLES[:1]:  # images first, so their [alt](src) isn't taken for a link
+        text = rx.sub(rep, text)
+
+    def link(m):
+        label, url = m.group(1), m.group(2)
+        out = f"\033]8;;{url}\033\\\033[4;34m{label}\033[24;39m\033]8;;\033\\"
+        return out if in_mathterm else out + f" {DIM}({url}){DIM_OFF}"
+
+    text = LINK.sub(link, text)
+    for rx, rep in INLINE_STYLES[1:]:
+        text = rx.sub(rep, text)
+    return text
+
+
+def style_line(line, width, in_mathterm):
+    """Inside mathterm, rules are drawn by the terminal (OSC 7777;rule) so they track resizes."""
     def rule(kind, char, sgr):
-        return f"\033]7777;rule;{kind}\a" if term_rules else f"\033[{sgr}m{char * width}\033[0m"
+        return f"\033]7777;rule;{kind}\a" if in_mathterm else f"\033[{sgr}m{char * width}\033[0m"
 
     if m := re.match(r"(#{1,6})\s+(.*)", line):
         if len(m.group(1)) == 1:
@@ -38,14 +58,50 @@ def style_line(line, width, term_rules):
         return rule("hr", "─", "2")
     line = re.sub(r"^(\s*)[-*+]\s+", "\\1• ", line)
     line = re.sub(r"^>\s?", "\033[2m│\033[22m ", line)
-    for rx, rep in INLINE_STYLES:
-        line = rx.sub(rep, line)
-    return line
+    return inline(line, in_mathterm)
+
+
+HASH_COMMENT_LANGS = {"python", "py", "sh", "bash", "zsh", "shell", "ruby", "rb", "yaml", "yml", "toml",
+                      "r", "perl", "make", "makefile", "dockerfile", "elixir", "nim"}
+KEYWORDS = ("def|class|return|if|elif|else|for|while|in|not|and|or|is|import|from|as|with|try|except|finally|"
+            "raise|lambda|yield|pass|break|continue|fn|let|mut|pub|struct|enum|impl|trait|use|mod|match|const|"
+            "static|var|function|async|await|catch|throw|new|this|self|super|true|false|True|False|None|null|"
+            "nil|void|int|char|float|double|bool|auto|public|private|protected|interface|type|package|func|go|"
+            "defer|switch|case|default|do|typedef|namespace|template|include|where|loop|echo|then|fi|done|esac")
+
+
+def simple_highlight(code, lang):
+    """Fallback when pygments isn't installed: comments, strings, numbers and common keywords."""
+    comment = r"#[^\n]*" if lang in HASH_COMMENT_LANGS else r"//[^\n]*|/\*.*?\*/"
+    tok = re.compile(rf"(?P<c>{comment})|(?P<s>\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*')"
+                     rf"|(?P<n>\b\d+(?:\.\d+)?\b)|(?P<k>\b(?:{KEYWORDS})\b)", re.S)
+    colors = {"c": "90", "s": "32", "n": "36", "k": "95"}
+    return tok.sub(lambda m: f"\033[{colors[m.lastgroup]}m{m.group(0)}{FG_OFF}", code)
+
+
+def highlight(code, lang):
+    if not lang:
+        return "\n".join(CODE_ON + l + FG_OFF for l in code.split("\n"))
+    try:  # pygments is optional: much better lexers when it's installed
+        from pygments import highlight as pyg
+        from pygments.formatters import Terminal256Formatter
+        from pygments.lexers import get_lexer_by_name
+        return pyg(code, get_lexer_by_name(lang), Terminal256Formatter(style="monokai")).rstrip("\n")
+    except Exception:  # not installed, or unknown language
+        return simple_highlight(code, lang)
 
 
 def code_block(block):
-    lines = block.split("\n")[1:-1]  # drop the ``` fences
-    return "\n".join(f"  {CODE_ON}{l}{FG_OFF}" for l in lines)
+    first, *lines = block.split("\n")
+    lang = first[3:].strip().lower()
+    return "\n".join("  " + l for l in highlight("\n".join(lines[:-1]), lang).split("\n"))  # drop the fences
+
+
+def cells(row):
+    row = row.strip()
+    row = row[1:] if row.startswith("|") else row
+    row = row[:-1] if row.endswith("|") else row
+    return [c.strip() for c in row.split("|")]  # ponytail: escaped \| isn't supported
 
 
 def guess_sizes(maths):
@@ -80,7 +136,8 @@ def osc(tex, cols, rows, disp):
 
 
 def render(text, width, sizer=None):
-    """Style markdown. With a sizer, math becomes OSC 7777; without one, it stays as source."""
+    """Style markdown. With a sizer (inside mathterm), math becomes OSC 7777; without one, it stays as source."""
+    in_mt = sizer is not None
     maths, codes = [], []  # (tex, is_display, source) / code span text
 
     def stash_math(m):
@@ -93,21 +150,67 @@ def render(text, width, sizer=None):
         codes.append(m.group(1))
         return f"\ue002{len(codes) - 1}\ue003"
 
+    # Swap math and code spans for placeholders first, then size the math: tables need its width.
+    parts = FENCE.split(text)
+    for i in range(0, len(parts), 2):  # even parts are outside code fences
+        parts[i] = MATH.sub(stash_math, CODE.sub(stash_code, parts[i]))
+    sizes = sizer([(t, d) for t, d, _ in maths]) if sizer and maths else None
+
+    def tall(line):  # tall inline math (rows > 1) needs a blank row above and below
+        return bool(sizes) and any(not maths[int(n)][1] and sizes[int(n)][1] > 1 for n in MATH_PH.findall(line))
+
+    def vis_len(t):
+        t = CODE_PH.sub(lambda m: "x" * len(codes[int(m.group(1))]), t)
+        t = MATH_PH.sub(lambda m: "x" * (sizes[int(m.group(1))][0] if sizes else len(maths[int(m.group(1))][2])), t)
+        return len(ANSI.sub("", t))
+
+    def table(rows):
+        seps = cells(rows[1])
+        aligns = ["c" if c.startswith(":") and c.endswith(":") else "r" if c.endswith(":") else "l" for c in seps]
+        n = len(aligns)
+        body = [[inline(c, in_mt) for c in (cells(r) + [""] * n)[:n]] for r in [rows[0]] + rows[2:]]
+        w = [max(vis_len(r[c]) for r in body) for c in range(n)]
+
+        def pad(t, c):
+            gap = w[c] - vis_len(t)
+            left = {"l": 0, "c": gap // 2, "r": gap}[aligns[c]]
+            return " " * left + t + " " * (gap - left)
+
+        def border(l, mid, r):
+            return DIM + l + mid.join("─" * (x + 2) for x in w) + r + DIM_OFF
+
+        def row(r, header=False):
+            bar = f"{DIM}│{DIM_OFF}"
+            return bar + bar.join(f" {BOLD if header else ''}{pad(t, c)}{BOLD_OFF if header else ''} "
+                                  for c, t in enumerate(r)) + bar
+
+        out = [border("┌", "┬", "┐")]
+        for i, r in enumerate(body):
+            spacer = [row([""] * n)] if tall("".join(r)) else []
+            out += spacer + [row(r, header=i == 0)] + spacer
+            if i == 0:
+                out.append(border("├", "┼", "┤"))
+        return out + [border("└", "┴", "┘")]
+
     out = []
-    for i, part in enumerate(FENCE.split(text)):
-        if i % 2:  # odd parts are code fences
+    for i, part in enumerate(parts):
+        if i % 2:
             out.append(code_block(part))
             continue
-        part = MATH.sub(stash_math, CODE.sub(stash_code, part))
-        out.append("\n".join(style_line(l, width, sizer is not None) for l in part.split("\n")))
+        lines, res, j = part.split("\n"), [], 0
+        while j < len(lines):
+            if "|" in lines[j] and j + 1 < len(lines) and TABLE_SEP.match(lines[j + 1]):
+                k = j + 2
+                while k < len(lines) and "|" in lines[k]:
+                    k += 1
+                res += table(lines[j:k])
+                j = k
+                continue
+            styled = style_line(lines[j], width, in_mt)
+            res += ["", styled, ""] if tall(lines[j]) else [styled]
+            j += 1
+        out.append("\n".join(res))
     s = CODE_PH.sub(lambda m: CODE_ON + codes[int(m.group(1))] + FG_OFF, "".join(out))
-
-    sizes = sizer([(t, d) for t, d, _ in maths]) if sizer and maths else None
-    if sizes:
-        # tall inline math (rows > 1) is drawn centered on its row: give it a blank line above and below
-        def tall(line):
-            return any(not maths[int(n)][1] and sizes[int(n)][1] > 1 for n in MATH_PH.findall(line))
-        s = "\n".join(f"\n{l}\n" if tall(l) else l for l in s.split("\n"))
 
     def emit(m):
         n = int(m.group(1))
@@ -149,7 +252,20 @@ def test():
     assert render("---", 3) == "\033[2m───\033[0m"
     assert render("---", 3, fixed) == "\033]7777;rule;hr\a"
     assert render("# T", 3, fixed) == "\033[1;35mT\033[0m\n\033]7777;rule;h1\a"
-    assert render("[t](http://x)", 80) == "\033[4;34mt\033[24;39m \033[2m(http://x)\033[22m"
+    link = "\033]8;;http://x\033\\\033[4;34mt\033[24;39m\033]8;;\033\\"
+    assert render("[t](http://x)", 80) == link + " \033[2m(http://x)\033[22m"
+    assert render("[t](http://x)", 80, fixed) == link  # mathterm: clickable, URL shown on hover
+    assert render("![a](i.png)", 80) == "\033[2m[image: a]\033[22m"
+    # tables (compare with styling stripped)
+    plain = lambda t: re.sub(r"\033\][^\a]*\a", "", ANSI.sub("", t))
+    assert plain(render("|a|b|\n|-|-:|\n|1|22|", 80)) == "┌───┬────┐\n│ a │  b │\n├───┼────┤\n│ 1 │ 22 │\n└───┴────┘"
+    assert plain(render("| $x$ |\n|---|\n| y |", 80, fixed)) == "┌──────┐\n│      │\n├──────┤\n│ y    │\n└──────┘"
+    assert plain(render("|`a|b`|\n|:-:|\n|c|", 80)) == "┌─────┐\n│ a|b │\n├─────┤\n│  c  │\n└─────┘"
+    assert render("a | b", 80) == "a | b"  # a pipe alone isn't a table
+    # code highlighting fallback
+    assert simple_highlight("x = 1  # hi", "python") == "x = \033[36m1\033[39m  \033[90m# hi\033[39m"
+    assert simple_highlight('let s = "a//b"; // c', "rust") == \
+        '\033[95mlet\033[39m s = \033[32m"a//b"\033[39m; \033[90m// c\033[39m'
     assert render("**bold $x$**", 80, fixed) == "\033[1mbold \033]7777;4;1;i;x\a    \033[22m"
     print("ok")
 

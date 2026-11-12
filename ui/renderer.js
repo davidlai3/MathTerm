@@ -10,7 +10,14 @@ const term = new Terminal({
   fontFamily: 'Menlo, monospace',
   fontSize: 14,
   theme: { background: '#1e1e1e' },
+  // OSC 8 hyperlinks: show the target on hover, open with Cmd-click (plain clicks still select text)
+  linkHandler: {
+    activate: (e, uri) => { if (e.metaKey) invoke('open_url', { url: uri }); },
+    hover: (_, uri) => { statusBar.textContent = `${uri}  ·  ⌘-click to open`; statusBar.hidden = false; },
+    leave: () => { statusBar.hidden = true; },
+  },
 });
+const statusBar = document.getElementById('status');
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(document.getElementById('term'));
