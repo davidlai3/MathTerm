@@ -1,6 +1,7 @@
 # mathterm demo
 
 Euler's identity $e^{i\pi} + 1 = 0$ sits inline, and so does $\alpha^2 + \beta^2$.
+Inline fractions like $\frac{1}{2} + \frac{a}{b}$ get squeezed the most.
 
 A display equation:
 

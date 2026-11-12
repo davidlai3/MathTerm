@@ -1,41 +1,88 @@
 #!/usr/bin/env python3
 """mdv [file.md]: print markdown, rendering $..$ and $$..$$ via mathterm's OSC 7777.
-Outside mathterm it prints the file unchanged. Reads stdin if no file given."""
-import os, re, shutil, sys
+Outside mathterm (or when stdout isn't a tty) it prints the file unchanged. Reads stdin if no file given."""
+import os, re, select, shutil, sys, termios, tty
 
-DISPLAY = re.compile(r"\$\$(.+?)\$\$", re.S)
-# pandoc's rule: no space just inside the $s, closing $ not followed by a digit (so "$5 and $10" is left alone)
-INLINE = re.compile(r"(?<![\\$])\$(?=\S)([^$\n]+?)(?<=\S)\$(?!\$|\d)")
+# $$display$$ | $inline$ (pandoc's rule: no space just inside the $s, closing $ not followed by a digit)
+MATH = re.compile(r"\$\$(.+?)\$\$|(?<![\\$])\$(?=\S)([^$\n]+?)(?<=\S)\$(?!\$|\d)", re.S)
 FENCE = re.compile(r"(```.*?```)", re.S)
+REPLY = re.compile(rb"\033\]7777;=;(\d+);(\d+)\a")
 
 
-def osc(tex, cols, rows):
-    return f"\033]7777;{cols};{rows};{tex}\a"
+def tokenize(text):
+    """Split into str segments and (tex, is_display) tuples, leaving code fences alone."""
+    segs = []
+    for i, part in enumerate(FENCE.split(text)):
+        if i % 2:  # odd parts are code fences
+            segs.append(part)
+            continue
+        pos = 0
+        for m in MATH.finditer(part):
+            segs.append(part[pos:m.start()])
+            disp = m.group(1) is not None
+            segs.append((" ".join((m.group(1) if disp else m.group(2)).split()), disp))  # OSC can't hold newlines
+            pos = m.end()
+        segs.append(part[pos:])
+    return segs
 
 
-def render(text, width):
-    def display(m):
-        tex = " ".join(m.group(1).split())  # OSC payload can't hold newlines
-        rows = 3 + m.group(1).count(r"\\")  # ponytail: guessed size, terminal shrinks to fit; have the terminal measure if this looks off
-        return "\n" + osc(tex, width, rows) + "\n" * rows
+def guess_sizes(maths):
+    # ponytail: fallback when the terminal doesn't answer the size query
+    return [(len(t) // 2 + 2, 3 + t.count(r"\\")) if d else (max(2, len(t) * 6 // 10 + 1), 1) for t, d in maths]
 
-    def inline(m):
-        cols = max(2, len(m.group(1)) * 6 // 10 + 1)  # ponytail: same guess
-        return osc(m.group(1), cols, 1) + " " * cols
 
-    parts = FENCE.split(text)
-    for i in range(0, len(parts), 2):  # even parts are outside code fences
-        parts[i] = INLINE.sub(inline, DISPLAY.sub(display, parts[i]))
-    return "".join(parts)
+def query_sizes(maths):
+    """Ask the terminal how many cells each expression needs (OSC 7777;?)."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR)
+    except OSError:
+        return guess_sizes(maths)
+    old = termios.tcgetattr(fd)
+    buf = b""
+    try:
+        tty.setraw(fd)  # so the replies aren't echoed or line-buffered
+        os.write(fd, "".join(f"\033]7777;?;{'d' if d else 'i'};{t}\a" for t, d in maths).encode())
+        while len(REPLY.findall(buf)) < len(maths):
+            if not select.select([fd], [], [], 1.0)[0]:
+                break
+            buf += os.read(fd, 4096)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        os.close(fd)
+    sizes = [(int(c), int(r)) for c, r in REPLY.findall(buf)]
+    return sizes if len(sizes) == len(maths) else guess_sizes(maths)
+
+
+def osc(tex, cols, rows, disp):
+    return f"\033]7777;{cols};{rows};{'d' if disp else 'i'};{tex}\a"
+
+
+def render(text, width, sizer):
+    segs = tokenize(text)
+    maths = [s for s in segs if isinstance(s, tuple)]
+    sizes = iter(sizer(maths) if maths else [])
+    out = []
+    for s in segs:
+        if isinstance(s, str):
+            out.append(s)
+            continue
+        tex, disp = s
+        cols, rows = next(sizes)
+        if disp:
+            cols = min(cols, width)
+            out.append("\n" + " " * ((width - cols) // 2) + osc(tex, cols, rows, True) + "\n" * rows)
+        else:
+            out.append(osc(tex, cols, 1, False) + " " * cols)  # spaces reserve the cells the overlay covers
+    return "".join(out)
 
 
 def test():
-    out = render("a $x^2$ b", 80)
-    assert "\033]7777;" in out and ";1;x^2\a" in out, out
-    assert render("costs $5 and $10", 80) == "costs $5 and $10"
-    assert render("```\n$x$\n```", 80) == "```\n$x$\n```"
-    out = render("$$\na \\\\ b\n$$", 80)
-    assert ";80;4;a \\\\ b\a" in out, repr(out)
+    fixed = lambda maths: [(10, 2) if d else (4, 1) for _, d in maths]
+    assert render("a $x^2$ b", 80, fixed) == "a \033]7777;4;1;i;x^2\a     b"
+    assert render("costs $5 and $10", 80, fixed) == "costs $5 and $10"
+    assert render("```\n$x$\n```", 80, fixed) == "```\n$x$\n```"
+    assert render("$$\na \\\\ b\n$$", 20, fixed) == "\n" + " " * 5 + "\033]7777;10;2;d;a \\\\ b\a\n\n"
+    assert guess_sizes([("a \\\\ b", True)]) == [(5, 4)]
     print("ok")
 
 
@@ -44,6 +91,6 @@ if __name__ == "__main__":
         test()
         sys.exit()
     text = open(sys.argv[1]).read() if sys.argv[1:] else sys.stdin.read()
-    if os.environ.get("MATHTERM") == "1":
-        text = render(text, shutil.get_terminal_size().columns)
+    if os.environ.get("MATHTERM") == "1" and sys.stdout.isatty():
+        text = render(text, shutil.get_terminal_size().columns, query_sizes)
     sys.stdout.write(text)

@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>mathterm</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="vendor/katex.min.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+    #term { height: 100%; padding: 4px; box-sizing: border-box; }
+    .math { display: flex; align-items: center; overflow: hidden;
+            background: #1e1e1e; color: #e6e6e6; font-size: 14px; pointer-events: none; }
+    .math.inline { overflow: visible; }
+    .math > div { display: inline-block; transform-origin: left center; white-space: nowrap; }
+    .math-probe { position: absolute; top: 0; left: 0; visibility: hidden;
+                  display: inline-block; white-space: nowrap; font-size: 14px; }
+    .math .katex-display, .math-probe .katex-display { margin: 0; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/katex.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

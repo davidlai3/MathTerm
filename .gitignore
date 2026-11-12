@@ -1,2 +1,5 @@
 node_modules/
 shot.png
+ui/vendor/
+src-tauri/target/
+src-tauri/gen/
