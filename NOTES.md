@@ -56,7 +56,14 @@ For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). 
   read cell by cell (with a string-index to cell-column map, so wide characters line up) and matched for
   `$..$`, `$$..$$`, `\(..\)`, `\[..\]` with `mdv`'s `$` rules. Rows that are only `$$` or `\[` (optionally
   after an editor line number) open a multi-row block, up to 30 rows.
-- A match becomes an absolutely positioned overlay covering exactly the source's cells, using the source cell's
+- **Growing:** a match may take up to `MAX_GROW` (3) empty rows above and below it (empty under its columns,
+  not the cursor row, not another match). Display math uses all of them; inline math grows symmetrically so
+  it stays centered on its text row. A gap shared by two matches is split (upper gets floor(gap/2)). This is
+  what makes Claude Code's one-line `$$..$$` (between blank lines) render near full size instead of 1 row.
+- **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. A match spanning rows
+  is accepted only if nothing else is on those rows (true for a long display line), and it then covers them
+  full-width, keeping the source indent.
+- A match becomes an absolutely positioned overlay covering the source's cells (plus grown rows), using the source cell's
   foreground/background (default palette, 256-color cube or RGB, honoring inverse). Math is scaled to fit,
   with inline allowed `INLINE_OVERFLOW`.
 - Skipped: the cursor row, and any block containing it (so you can edit the source); rows inside ``` fences
@@ -92,6 +99,14 @@ bin/mdv --test     # mdv self-check
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: math grows into empty rows, soft-wrapped matches
+- In Claude Code, display math is one `$$..$$` line between blank lines, so it got 1 row and rendered at
+  ~1/3 size (user screenshot). Matches now grow into up to 3 empty rows above/below (`grow()`). Shared gaps
+  are split so neighbors never overlap.
+- Matches spanning soft-wrapped rows are detected when they're alone on those rows (long display lines).
+- Tested with a Claude-Code-style transcript (`cat`): `\underbrace`, sums with limits, integrals and a
+  wrapped display line all render near full size.
 
 ### 2026-11-11: auto-detect mode
 - New `ui/automath.js`: typesets LaTeX found anywhere on screen, with no program cooperation. Verified with
@@ -188,15 +203,17 @@ Roughly in priority order:
 
 The mode exists (see "Auto-detect mode" above). Still to do:
 
-- **Verify inside Claude Code.** Check how its markdown renderer treats `\(`, `\\`, `_` and `*` in model
-  output. Markdown may eat backslashes or turn `a_1 + b_1` into italics before the terminal sees it, and
-  that would need extra detection rules.
+- **Claude Code, partly verified** (user screenshot): one-line `$$..$$` display math survives its markdown
+  rendering with backslashes and `_` intact. Still unchecked: inline `$..$` and `\(..\)`. In that sample the
+  model wrote inline math as Unicode (`Yₙ`) rather than LaTeX.
 - **Code without fences.** TUIs that render code blocks without backticks (Claude Code included) give no hint,
   so `$var$`-like text inside them can be typeset. Possible heuristic: skip rows whose cells share a
   code-block background color.
-- **Tight fit.** Inline math leaves a gap where the source was wider, and tall math has only its row (+25%).
+- **Tight fit.** Inline math leaves a gap where the source was wider. Inline math with text directly above
+  and below has only its row (+25%).
   Can't reserve space in someone else's layout; could center instead of left-align if that reads better.
-- Soft-wrapped math (a match split across rows) isn't detected.
+- Stacked equations with no blank row between them get no extra room and stay small. Wrapped inline math
+  (sharing rows with prose) is still skipped.
 
 ### Goal: full live preview
 
