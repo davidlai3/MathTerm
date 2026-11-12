@@ -18,7 +18,11 @@ math over the cells where the source sits, in the source's own colors.
   markdown lay out equations, so it renders at full size instead of being squeezed into one row.
 - **Few false positives:** `$5 and $10` stays text, code fences and `` `inline code` `` are skipped, and
   anything KaTeX can't parse is left alone.
+- **No gaps:** math usually renders narrower than its LaTeX source, so the text after it is redrawn
+  flush against it.
 - **Copy works:** the cells still hold the source, so copying an equation gives you its LaTeX.
+
+![Claude Code explaining the Riemann hypothesis in mathterm: inline and display math typeset in its replies](docs/claude-code.png)
 
 Cmd-Shift-M toggles detection.
 
@@ -40,6 +44,7 @@ npm start
   "theme": "catppuccin-mocha",
   "fontSize": 14,
   "fontFamily": "Menlo, monospace",
+  "lineHeight": 1.2,
   "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"]
 }
 ```
@@ -60,8 +65,8 @@ nvim's `set title`, switching files with `:e` is picked up as well.
 
 ## Add-on: `mdv`, a markdown viewer
 
-Detection can only use the space a program already left for the math, so inline math can leave a gap
-where its source was wider. `mdv` is a small viewer (Python, stdlib only) that lays the page out itself:
+Detection can only use the space a program already left for the math, so tall inline math between lines
+of text is shrunk to fit its row. `mdv` is a small viewer (Python, stdlib only) that lays the page out itself:
 
 ```sh
 mdv notes.md                         # styled markdown with typeset math
@@ -85,8 +90,8 @@ math as source. With output redirected (`mdv f.md > out`) it prints the file unc
 
 Early prototype, macOS only. Known gaps:
 
-- Detected inline math can't take more room than its source: a gap is left after it, and tall inline math
-  with text directly above and below is shrunk to fit its row.
+- Tall inline math with text directly above and below is shrunk to fit its row.
+- On a soft-wrapped line, a word the terminal split at the edge stays split after the gap closes.
 - TUIs that draw code blocks without backticks (Claude Code does) can get `$var$`-like text typeset.
 - In `mdv`, tables wider than the window wrap and break their borders.
 

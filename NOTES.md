@@ -55,7 +55,7 @@ raw:    ESC ] 7777 ; raw ; <len> BEL                    (next len cells are lite
 - `~/.config/mathterm/config.json` (or `$MATHTERM_CONFIG`), read by the Rust `config` command at startup and
   parsed in the frontend, so a broken file shows an error in the status bar instead of failing:
   `{ "theme": "catppuccin-mocha" | { ...ITheme }, "fontSize": 14, "fontFamily": "Menlo, monospace",
-  "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"] }`.
+  "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"] }`.
   A custom theme object is merged over `default`, so a partial one works.
 - `applyTheme` sets xterm's theme plus CSS variables (`--bg`, `--fg`, `--dim`, `--h1`, `--status-bg`) for
   everything drawn outside xterm: math overlays, rules, the status bar. Auto-detect resolves palette
@@ -130,6 +130,17 @@ bin/mdv --test     # mdv self-check
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: lineHeight config, lone-row overflow, README screenshots
+- `"lineHeight"` in config.json (default 1.2).
+- Auto-detect: one-row inline math may overflow its row by 10% (`LONE_OVERFLOW`) when neither neighbor row
+  has math. KaTeX's parens are taller than a text row, so at 1.0 even `f(x)` shrank to ~0.86. With math on a
+  neighbor row it stays at `INLINE_OVERFLOW` (1.0): a global 1.1 made `\frac{a}{b}` collide with the `\sum^n`
+  on the next row, and the lower overlay's background clipped it. `mdv` keeps 1.0.
+- README: Claude Code screenshot (`docs/claude-code.png`, taken by the user), regenerated `demo.png`/`nvim.png`.
+- `shot:docs` nvim shot was blank: `.ready` was touched before nvim started, so the capture beat nvim's
+  first draw. Now `(sleep 3; touch ...) & disown; nvim ...`. Gotcha: `&!` doesn't work there; the INIT
+  is typed into interactive zsh, which history-expands the `!`.
 
 ### 2026-11-11: close gaps after inline math
 - **Joined rows** (`joinRows`/`makeJoined` in `automath.js`): on a row where one-row matches are followed by

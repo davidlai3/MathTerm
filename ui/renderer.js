@@ -56,7 +56,7 @@ function setFontSize(px) {
 }
 
 // ~/.config/mathterm/config.json: { "theme": "catppuccin-mocha" | {..ITheme..}, "fontSize": 14, "fontFamily": "...",
-//   "autoDetectIgnore": ["*.tex", ...] }
+//   "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", ...] }
 let config = {}; // the parsed config.json, for other modules (automath.js reads autoDetectIgnore)
 function applyConfig(text) {
   let cfg = {};
@@ -71,6 +71,7 @@ function applyConfig(text) {
   }
   applyTheme(typeof cfg.theme === 'string' ? THEMES[cfg.theme] : cfg.theme);
   if (cfg.fontFamily) term.options.fontFamily = cfg.fontFamily;
+  if (cfg.lineHeight) term.options.lineHeight = cfg.lineHeight;
   baseFontSize = cfg.fontSize || baseFontSize;
   setFontSize(baseFontSize);
 }

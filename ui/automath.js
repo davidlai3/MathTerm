@@ -26,6 +26,10 @@ const MAX_GROW = 3;
 // When math grew into neighboring rows, keep this much (in rows) clear at the top and bottom so it
 // doesn't touch the text around it.
 const GROW_MARGIN = 0.25;
+// One-row inline math may overflow its row by this much when neither neighbor row has math: KaTeX's
+// parentheses are taller than a text row, so at 1.0 `f(x)` shrinks to ~0.86. Text rows have spare padding
+// (lineHeight 1.2); a neighbor's math would collide, so with one it stays at INLINE_OVERFLOW.
+const LONE_OVERFLOW = 1.1;
 // Markdown code: skip rows inside ``` fences (tracked from the top of the viewport) and `inline code`.
 const FENCE = /^\s*(?:\d+\s+)?```/;
 // Rows above the viewport read to know whether its top is inside a fence.
@@ -239,7 +243,7 @@ function joinRows(found) {
       if (runs.length) parts.push({ runs, cols: z - a });
     };
     ms.forEach((m, k) => {
-      parts.push({ tex: m.tex, display: m.display, cols: m.x1 - m.x0, up: m.y - m.top, span: m.span,
+      parts.push({ tex: m.tex, display: m.display, cols: m.x1 - m.x0, up: m.y - m.top, span: m.span, overflow: m.overflow,
         fg: m.c ? cellColor(m.c, true) : term.options.theme.foreground });
       text(m.x1, k + 1 < ms.length ? ms[k + 1].x0 : x1);
     });
@@ -271,6 +275,7 @@ function grow(found, cursorRow) {
     if (!f.display) up = down = Math.min(up, down);
     f.top = f.y - up;
     f.span = f.rows + up + down;
+    f.overflow = taken.has(f.y - 1) || taken.has(last + 1) ? INLINE_OVERFLOW : LONE_OVERFLOW;
   }
 }
 
@@ -304,7 +309,7 @@ function makeJoined(item, cw, ch) {
       inner.innerHTML = html;
       inner.style.color = p.fg;
       // grown math stays centered on this row, so it may extend past the 1-row box
-      const maxH = p.span === 1 ? ch * INLINE_OVERFLOW : (p.span - 2 * GROW_MARGIN) * ch;
+      const maxH = p.span === 1 ? ch * p.overflow : (p.span - 2 * GROW_MARGIN) * ch;
       fitInk(inner, p.cols * cw, maxH);
       x += Math.min(p.cols * cw, inner.getBoundingClientRect().width);
     }
@@ -332,7 +337,7 @@ function makeOverlay(item, cw, ch) {
   el.appendChild(inner);
   autoLayer.appendChild(el);
   const grew = item.span > item.rows;
-  const maxH = item.span === 1 ? ch * INLINE_OVERFLOW : (item.span - (grew ? 2 * GROW_MARGIN : 0)) * ch;
+  const maxH = item.span === 1 ? ch * item.overflow : (item.span - (grew ? 2 * GROW_MARGIN : 0)) * ch;
   if (block) {
     const r = inner.getBoundingClientRect();
     const s = Math.min(1, (item.x1 - item.x0) * cw / r.width, maxH / r.height);
@@ -382,7 +387,7 @@ function scan() {
     const [cw, ch] = cellSize();
     for (const it of findMath()) {
       // Position is left out so that scrolling moves existing overlays instead of rebuilding them.
-      const key = it.key ? `${it.key}|${cw}|${ch}` : [it.span, it.y - it.top, it.rows, it.x1 - it.x0, it.pad, it.display, it.tex,
+      const key = it.key ? `${it.key}|${cw}|${ch}` : [it.span, it.overflow, it.y - it.top, it.rows, it.x1 - it.x0, it.pad, it.display, it.tex,
         it.c && cellColor(it.c, true), it.c && cellColor(it.c, false), cw, ch].join('|');
       const pool = old.get(key) || [];
       let i = pool.findIndex((o) => o.top === it.top && o.x0 === it.x0);
