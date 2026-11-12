@@ -90,7 +90,7 @@ echo 'Euler: $e^{i\pi}+1=0$' | mdv   # or read from stdin
 
 `mdv` talks to mathterm through **OSC 7777**, a small private escape sequence for asking how big an equation
 renders and drawing it in space the program reserved. The details are in
-[NOTES.md](NOTES.md#protocol-osc-7777). In other terminals `mdv` still styles the markdown and leaves the
+[notes/protocol.md](notes/protocol.md). In other terminals `mdv` still styles the markdown and leaves the
 math as source. With output redirected (`mdv f.md > out`) it prints the file unchanged.
 
 ## Status
@@ -108,7 +108,7 @@ Early prototype, macOS only. Known gaps:
   blocks drawn without backticks.
 - **Live preview:** `mdv --watch` in a split pane, for the fully styled page beside your editor.
 
-The full plan and changelog are in [NOTES.md](NOTES.md).
+The [plans](notes/plans.md) and [changelog](notes/changelog.md) are in `notes/`.
 
 ## License
 

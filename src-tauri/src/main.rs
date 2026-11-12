@@ -78,7 +78,7 @@ fn start(app: AppHandle, window: WebviewWindow, session: State<Session>, cols: u
 
     sessions.insert(label.clone(), Pty { writer, master: pair.master });
 
-    // dev hook: type a command once the shell is up (see NOTES.md). Typed immediately, zsh sometimes
+    // dev hook: type a command once the shell is up (see notes/dev.md). Typed immediately, zsh sometimes
     // dropped the Enter while it was still initializing, and the command sat at the prompt.
     if let (Ok(init), "main") = (std::env::var("MATHTERM_INIT"), label.as_str()) {
         let app = app.clone();

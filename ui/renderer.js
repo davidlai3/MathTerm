@@ -273,7 +273,7 @@ function relayout() {
 }
 term.onResize(relayout);
 
-// Protocol (see NOTES.md):
+// Protocol (see notes/protocol.md):
 //   query:  OSC 7777 ; ? ; <i|d> ; <latex> BEL      -> reply OSC 7777 ; = ; <cols> ; <rows> BEL
 //   draw:   OSC 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL   (inline rows > 1 = tall, see TALL_SCALE)
 //   rule:   OSC 7777 ; rule ; <h1|hr> BEL                     (full-width line on the current row)
