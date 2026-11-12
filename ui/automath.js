@@ -212,7 +212,7 @@ function findMath() {
     const { text, col, wid } = rows[y];
     if (FENCE.test(text)) { inFence = !inFence; continue; }
     if (inFence) continue;
-    const tbl = tableAt(y);
+    const tbl = config.autoDetectTables !== false && tableAt(y); // off: leave tables to e.g. an nvim plugin
     if (tbl) {
       if (!tbl.skip) found.push(tbl);
       y = tbl.y + tbl.rows - 1;

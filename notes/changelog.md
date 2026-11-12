@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-12: `autoDetectTables` config
+- `"autoDetectTables": false` turns off auto-detected tables (user wants nvim plugins to draw them); math in
+  table rows is still typeset. Default on.
+
 ## 2026-11-12: gap with math at the row's end, nvim typing flicker
 - `joinRows` skipped rows whose *last* match ends the row, so text between two matches kept its gap
   (`$X_n$ depends on $X_{n-1}, \dots, X_0$`, user screenshot). Now only a lone match at the row's end is

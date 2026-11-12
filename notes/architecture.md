@@ -21,7 +21,7 @@ listener, so the first prompt isn't lost.
 - `~/.config/mathterm/config.json` (or `$MATHTERM_CONFIG`), read by the Rust `config` command at startup and
   parsed in the frontend, so a broken file shows an error in the status bar instead of failing:
   `{ "theme": "catppuccin-mocha" | { ...ITheme }, "fontSize": 14, "fontFamily": "Menlo, monospace",
-  "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"] }`.
+  "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"], "autoDetectTables": true }`.
   A custom theme object is merged over `default`, so a partial one works.
 - `applyTheme` sets xterm's theme plus CSS variables (`--bg`, `--fg`, `--dim`, `--h1`, `--status-bg`) for
   everything drawn outside xterm: math overlays, rules, the status bar. Auto-detect resolves palette

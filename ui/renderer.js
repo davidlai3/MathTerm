@@ -97,7 +97,7 @@ function setFontSize(px) {
 }
 
 // ~/.config/mathterm/config.json: { "theme": "catppuccin-mocha" | {..ITheme..}, "fontSize": 14, "fontFamily": "...",
-//   "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", ...] }
+//   "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", ...], "autoDetectTables": true }
 let config = {}; // the parsed config.json, for other modules (automath.js reads autoDetectIgnore)
 function applyConfig(text) {
   let cfg = {};

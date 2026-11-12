@@ -49,7 +49,8 @@ npm run app    # builds mathterm.app and installs it in /Applications
   "fontSize": 14,
   "fontFamily": "Menlo, monospace",
   "lineHeight": 1.2,
-  "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"]
+  "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"],
+  "autoDetectTables": true
 }
 ```
 
@@ -60,6 +61,9 @@ keys (`background`, `foreground`, `black` ... `brightWhite`) to use any other sc
 `nvim hw7.tex`, since a `.tex` source usually has its PDF next to it. Patterns are globs matched against the
 file name of each argument, so program names work too (`"htop"`). The value shown is the default. With
 nvim's `set title`, switching files with `:e` is picked up as well.
+
+`autoDetectTables: false` turns off table rendering, e.g. if an editor plugin already draws tables. Math in
+table rows is still typeset.
 
 | Keys | |
 |---|---|
