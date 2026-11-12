@@ -2,7 +2,7 @@
 // the source's own cells. Works for programs that never send OSC 7777: Claude Code, cat, nvim while editing.
 // Overlays are screen-positioned and rebuilt from the viewport after every render, diffed by key, so
 // unchanged math is left alone. The cursor row (or a block containing it) keeps showing the source.
-// Toggle: Cmd-Shift-M. Uses `term`, `statusBar`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans` from renderer.js.
+// Toggle: Cmd-Shift-M. Uses `term`, `statusBar`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans`, `fitInk` from renderer.js.
 
 let autoMath = true;
 const autoLayer = document.createElement('div');
@@ -21,6 +21,9 @@ const MAX_BLOCK_ROWS = 30;
 // one-line $$..$$ between blank lines). Display math uses all of it; inline math grows symmetrically so it
 // stays centered on its text row.
 const MAX_GROW = 3;
+// When math grew into neighboring rows, keep this much (in rows) clear at the top and bottom so it
+// doesn't touch the text around it.
+const GROW_MARGIN = 0.25;
 // Markdown code: skip rows inside ``` fences (tracked from the top of the viewport) and `inline code`.
 const FENCE = /^\s*(?:\d+\s+)?```/;
 
@@ -193,10 +196,15 @@ function makeOverlay(item, cw, ch) {
   if (pad) inner.style.left = `${pad}px`;
   el.appendChild(inner);
   autoLayer.appendChild(el);
-  const r = inner.getBoundingClientRect();
-  const maxH = item.span * ch * (item.span === 1 ? INLINE_OVERFLOW : 1);
-  const s = Math.min(1, ((item.x1 - item.x0) * cw - pad) / r.width, maxH / r.height);
-  inner.style.transform = `${block ? 'translate(-50%, -50%)' : 'translateY(-50%)'} scale(${s})`;
+  const grew = item.span > item.rows;
+  const maxH = item.span === 1 ? ch * INLINE_OVERFLOW : (item.span - (grew ? 2 * GROW_MARGIN : 0)) * ch;
+  if (block) {
+    const r = inner.getBoundingClientRect();
+    const s = Math.min(1, (item.x1 - item.x0) * cw / r.width, maxH / r.height);
+    inner.style.transform = `translate(-50%, -50%) scale(${s})`;
+  } else {
+    fitInk(inner, (item.x1 - item.x0) * cw - pad, maxH); // from renderer.js: fit and center by ink height
+  }
   return el;
 }
 

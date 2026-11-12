@@ -9,6 +9,7 @@ const term = new Terminal({
   allowProposedApi: true, // needed for registerDecoration
   fontFamily: 'Menlo, monospace',
   fontSize: 14,
+  lineHeight: 1.2, // breathing room for text, and taller rows for math to grow into
   theme: { background: '#1e1e1e' },
   // OSC 8 hyperlinks: show the target on hover, open with Cmd-click (plain clicks still select text)
   linkHandler: {
@@ -42,20 +43,36 @@ function cellSize() {
   return [screen.clientWidth / term.cols, screen.clientHeight / term.rows];
 }
 
-// Inline math may spill this far past its row (split above/below) before being shrunk.
-const INLINE_OVERFLOW = 1.25;
+// Inline math is fitted to this many rows of *ink* height (see inkBox). 1.0 keeps it off neighboring rows.
+const INLINE_OVERFLOW = 1.0;
 // Below this scale, inline math is reported as 3 rows tall: the sender adds a blank line above and below.
 const TALL_SCALE = 0.85;
 
-// Size of `tex` in cells. Inline width is taken after scaling to fit its rows.
+// Vertical ink extent of rendered KaTeX, and how far its center sits from the element's box center.
+// KaTeX's struts span exactly the content's height + depth. The line box (line-height 1.2) is taller than
+// a terminal row even for a plain `x`, so fitting by the box made everything look "slightly tall".
+function inkBox(el) {
+  const box = el.getBoundingClientRect();
+  let top = Infinity, bottom = -Infinity;
+  for (const st of el.querySelectorAll('.katex-html .strut')) {
+    const r = st.getBoundingClientRect();
+    top = Math.min(top, r.top);
+    bottom = Math.max(bottom, r.bottom);
+  }
+  if (top === Infinity) return { height: box.height, offset: 0 };
+  return { height: bottom - top, offset: (top + bottom - box.top - box.bottom) / 2 };
+}
+
+// Size of `tex` in cells. Inline width is taken after scaling its ink to fit its rows.
 function measure(tex, display) {
   katex.render(tex, probe, { displayMode: display, throwOnError: false });
   const { width, height } = probe.getBoundingClientRect();
   const [cw, ch] = cellSize();
   if (display) return [Math.ceil(width / cw), Math.ceil(height / ch)];
-  const s1 = Math.min(1, (INLINE_OVERFLOW * ch) / height);
+  const ink = inkBox(probe).height;
+  const s1 = Math.min(1, (INLINE_OVERFLOW * ch) / ink);
   if (s1 >= TALL_SCALE) return [Math.ceil((width * s1) / cw), 1];
-  return [Math.ceil((width * Math.min(1, (3 * ch) / height)) / cw), 3];
+  return [Math.ceil((width * Math.min(1, (3 * ch) / ink)) / cw), 3];
 }
 
 // Everything drawn (math and rules), so it can be re-placed when the terminal is resized and lines re-wrap.
@@ -101,12 +118,15 @@ function place(item) {
     const inner = document.createElement('div');
     katex.render(item.tex, inner, { displayMode: item.display, throwOnError: false });
     el.appendChild(inner);
-    const maxH = el.clientHeight * (item.display ? 1 : Math.max(INLINE_OVERFLOW, room));
     // getBoundingClientRect, like measure(): scrollWidth/Height also count KaTeX's hidden MathML copy,
     // which WebKit lays out taller for fractions and made them shrink for no reason
     const r = inner.getBoundingClientRect();
-    const s = Math.min(1, el.clientWidth / r.width, maxH / r.height);
-    inner.style.transform = `${item.display ? 'translate(-50%, -50%)' : 'translateY(-50%)'} scale(${s})`;
+    if (item.display) {
+      const s = Math.min(1, el.clientWidth / r.width, el.clientHeight / r.height);
+      inner.style.transform = `translate(-50%, -50%) scale(${s})`;
+    } else {
+      fitInk(inner, el.clientWidth, el.clientHeight * Math.max(INLINE_OVERFLOW, room));
+    }
   });
 }
 
@@ -117,6 +137,13 @@ function anchor() {
   let start = y;
   while (start > 0 && b.getLine(start)?.isWrapped) start--;
   return { marker: term.registerMarker(start - y), offset: (y - start) * term.cols + b.cursorX };
+}
+
+// Scale `inner` (left/top-50% positioned) to fit w x h by its ink, with the ink centered vertically.
+function fitInk(inner, w, h) {
+  const r = inner.getBoundingClientRect(), ink = inkBox(inner);
+  const s = Math.min(1, w / r.width, h / ink.height);
+  inner.style.transform = `translateY(-50%) translateY(${-ink.offset * s}px) scale(${s})`;
 }
 
 function draw(fields) {

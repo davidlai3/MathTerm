@@ -30,7 +30,7 @@ raw:    ESC ] 7777 ; raw ; <len> BEL                    (next len cells are lite
 ```
 
 - `i` = inline, `d` = display.
-- Inline `rows` is 1 (fits its row, may spill 25% above/below) or 3 ("tall": scale would drop below
+- Inline `rows` is 1 (its ink fits the row) or 3 ("tall": scale would drop below
   `TALL_SCALE` = 0.85, so the sender puts a blank line above and below that line and the math is drawn
   centered on its row with up to 3 rows of height). On every placement the terminal checks that the rows
   above and below are empty under the math; if not (e.g. wrapped text after a resize), it fits one row.
@@ -58,7 +58,8 @@ For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). 
   after an editor line number) open a multi-row block, up to 30 rows.
 - **Growing:** a match may take up to `MAX_GROW` (3) empty rows above and below it (empty under its columns,
   not the cursor row, not another match). Display math uses all of them; inline math grows symmetrically so
-  it stays centered on its text row. A gap shared by two matches is split (upper gets floor(gap/2)). This is
+  it stays centered on its text row. Grown math keeps `GROW_MARGIN` (0.25 row) clear top and bottom.
+  A gap shared by two matches is split (upper gets floor(gap/2)). This is
   what makes Claude Code's one-line `$$..$$` (between blank lines) render near full size instead of 1 row.
 - **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. A match spanning rows
   is accepted only if nothing else is on those rows (true for a long display line), and it then covers them
@@ -99,6 +100,18 @@ bin/mdv --test     # mdv self-check
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: less cramped
+- Terminal `lineHeight: 1.2` (was 1.0): more air between text rows, and taller rows give math more height
+  without taking extra rows. All sizing reads the cell size from the DOM, so nothing else changed.
+- Math that grew into neighboring rows keeps `GROW_MARGIN` (0.25 row) clear at top and bottom, so it no
+  longer touches the surrounding text.
+- **Inline math is fitted by ink height, not line box** (`inkBox`/`fitInk` in `renderer.js`). KaTeX's line box
+  is ~22px even for a plain `x` (line-height 1.2), taller than a 19px row, so with the taller rows
+  everything measured as "slightly tall": nested fractions stopped counting as tall and spilled into
+  neighboring lines. The union of KaTeX's `.strut` rects is the exact height + depth. Inline math is now
+  scaled so its ink fits its row (`INLINE_OVERFLOW` 1.25 -> 1.0) and centered by ink, not by box. Used by
+  `measure()`, inline `draw`, and auto-detect overlays (multi-row `$$` blocks still fit by box).
 
 ### 2026-11-11: math grows into empty rows, soft-wrapped matches
 - In Claude Code, display math is one `$$..$$` line between blank lines, so it got 1 row and rendered at
