@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-12: tmux / editor vertical splits
+- With a tmux split, `$$` blocks went raw (user screenshot): their rows also held the border and the other
+  pane, so no row was "only `$$`". And the other pane's visible cursor (a shell prompt on row 0) marked
+  row 0 as being edited, so its math stayed raw too.
+- `paneRanges` finds full-height vertical borders (a column of `│` on all but ~3 rows) and `findIn` scans
+  each pane as its own column range: own fence/block/table state, cursor only counts in its own pane.
+  `grow` keeps rows taken per pane, `joinRows` groups per pane, `centerDisplay` centers within the pane.
+- Inside a pane, a row whose text reaches the pane's last column (within one: tmux may break on a space)
+  continues on the next row. tmux and nvim break lines there with cursor moves, not soft wraps.
+- Verified by screenshot with tmux (math on row 0 next to the other pane's cursor, a multi-row block, a
+  one-line block, a long display line wrapped in the pane) and without a split (no change).
+- Limits: only full-height borders, so a vertical border inside one half of a top/bottom split isn't seen.
+  Inline math wrapped mid-sentence at the pane edge stays raw, as at the window edge.
+
 ## 2026-11-12: matrices under nvim's conceal
 - In normal mode nvim conceals markdown escapes (`\\` shows as `\`, `\{` as `{`), so a `bmatrix` arrived with no
   row breaks and rendered as one row (user screenshot; fine in insert mode, where conceal is off). `unstrip`

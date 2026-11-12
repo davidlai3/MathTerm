@@ -6,6 +6,9 @@ For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). 
   read cell by cell (with a string-index to cell-column map, so wide characters line up) and matched for
   `$..$`, `$$..$$`, `\(..\)`, `\[..\]` with `mdv`'s `$` rules. Rows that are only `$$` or `\[` (optionally
   after an editor line number) open a multi-row block, up to 30 rows.
+- **Panes:** full-height vertical `│` borders (tmux, editor splits) split the screen into column ranges that
+  are scanned separately (`paneRanges`, `findIn`). Inside a pane, a row reaching the pane's edge continues
+  on the next row.
 - **Display math** is centered on the window when nothing else shares its rows (`centerDisplay`).
 - **Growing:** a match may take up to `MAX_GROW` (3) empty rows above and below it (empty under its columns,
   not the cursor row, not another match). Display math uses all of them; inline math grows symmetrically so

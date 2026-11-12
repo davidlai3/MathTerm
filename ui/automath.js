@@ -44,7 +44,7 @@ const FENCE_LOOKBACK = 200;
 // the row it was on still counts as the editing row. DECTCEM is tracked here because xterm doesn't expose
 // it; returning false keeps xterm's own handling.
 const HIDE_GRACE = 300;
-let cursorVisible = true, hiddenAt = 0, hiddenRow = 0; // hiddenRow: absolute buffer row
+let cursorVisible = true, hiddenAt = 0, hiddenRow = 0, hiddenCol = 0; // hiddenRow: absolute buffer row
 for (const [final, vis] of [['h', true], ['l', false]]) {
   term.parser.registerCsiHandler({ prefix: '?', final }, (params) => {
     if (!params.includes(25)) return false;
@@ -52,6 +52,7 @@ for (const [final, vis] of [['h', true], ['l', false]]) {
       const b = term.buffer.active;
       hiddenAt = performance.now();
       hiddenRow = b.baseY + b.cursorY;
+      hiddenCol = b.cursorX;
       setTimeout(queueScan, HIDE_GRACE + 20); // still hidden then (Claude Code): typeset that row too
     }
     cursorVisible = vis;
@@ -59,11 +60,11 @@ for (const [final, vis] of [['h', true], ['l', false]]) {
     return false;
   });
 }
-// The editing row in buffer coordinates, or null when there's none.
-function editRow() {
+// The editing position: { row (buffer coordinates), x }, or null when there's none.
+function editPos() {
   const b = term.buffer.active;
-  if (cursorVisible) return b.baseY + b.cursorY;
-  return performance.now() - hiddenAt < HIDE_GRACE ? hiddenRow : null;
+  if (cursorVisible) return { row: b.baseY + b.cursorY, x: b.cursorX };
+  return performance.now() - hiddenAt < HIDE_GRACE ? { row: hiddenRow, x: hiddenCol } : null;
 }
 
 // The theme's 16 colors and the 256-color cube, to give math its source's colors.
@@ -84,11 +85,11 @@ function cellColor(cell, wantFg) {
   return (fg ? cell.isFgRGB() : cell.isBgRGB()) ? `#${v.toString(16).padStart(6, '0')}` : palette(v);
 }
 
-// A row as a string, plus the cell column where each UTF-16 unit starts and the width of its cell.
-function rowCells(line) {
+// A row (columns xa..xb) as a string, plus the cell column where each UTF-16 unit starts and its cell's width.
+function rowCells(line, xa = 0, xb = term.cols) {
   let text = '';
   const col = [], wid = [];
-  for (let x = 0; x < term.cols; x++) {
+  for (let x = xa; x < xb; x++) {
     const c = line.getCell(x);
     if (!c) break;
     if (c.getWidth() === 0) continue; // right half of a wide character
@@ -123,15 +124,55 @@ const unstrip = (tex) => tex
   .replace(/(\\[a-zA-Z]+|\bO)!/g, '$1\\!')
   .replace(ROWS_ENV, (m, env, body) => m.replace(body, () => body.replace(/(?<!\\)\\(?=\s|$)/g, '\\\\')));
 
-function findMath() {
+// Side-by-side panes: tmux and editor vertical splits draw a column of `│` down (nearly) the whole screen.
+// Each pane is scanned as its own column range, so a row holding two panes' text still matches `$$` rows,
+// tables and fences, and the cursor only marks the row as being edited in its own pane.
+// ponytail: only full-height borders. A vertical border inside one half of a top/bottom split isn't seen.
+function paneRanges() {
   const b = term.buffer.active;
-  const er = editRow();
-  const cursorRow = er === null ? -1 : er - b.viewportY; // viewport-relative
+  const at = (y, x) => b.getLine(b.viewportY + y)?.getCell(x)?.getChars();
+  const mid = term.rows >> 1, borders = [];
+  for (let x = 1; x < term.cols - 1; x++) {
+    if (at(mid, x) !== '│') continue;
+    let n = 0;
+    for (let y = 0; y < term.rows; y++) if (at(y, x) === '│') n++;
+    if (n >= term.rows - 3) borders.push(x); // tmux's status line and junctions may break the column
+  }
+  const ranges = [];
+  let xa = 0;
+  for (const x of borders) { if (x > xa) ranges.push([xa, x]); xa = x + 1; }
+  ranges.push([xa, term.cols]);
+  return ranges;
+}
+
+function findMath() {
+  const cur = editPos(); // cur.row is in buffer coordinates
+  const vy = term.buffer.active.viewportY;
+  const found = [];
+  for (const [xa, xb] of paneRanges()) {
+    const inPane = cur && cur.x >= xa && cur.x < xb;
+    for (const f of findIn(xa, xb, inPane ? cur.row - vy : -1)) found.push(Object.assign(f, { xa, xb }));
+  }
+  const cursor = cur && { y: cur.row - vy, x: cur.x };
+  grow(found, cursor);
+  centerDisplay(found);
+  return joinRows(found);
+}
+
+// Matches in columns xa..xb (one pane). cursorRow: viewport row being edited in this pane, or -1.
+function findIn(xa, xb, cursorRow) {
+  const b = term.buffer.active;
   const rows = [];
   for (let y = 0; y < term.rows; y++) {
     const line = b.getLine(b.viewportY + y);
-    rows.push(line ? rowCells(line) : { text: '', col: [], wid: [] });
+    rows.push(line ? rowCells(line, xa, xb) : { text: '', col: [], wid: [] });
   }
+  // Is row y the continuation of row y-1? Across the full width xterm knows (soft wrap). Inside a pane, tmux
+  // and nvim break long lines with plain cursor moves, so a row whose text reaches the pane's last column is
+  // taken to continue on the next row. Within one column, because the break can land on a space.
+  const full = xa === 0 && xb === term.cols;
+  const fills = (r) => { const n = r.text.trimEnd().length; return n > 0 && r.col[n - 1] + r.wid[n - 1] >= xb - 1; };
+  const wrapped = (y) => (full ? !!b.getLine(b.viewportY + y)?.isWrapped : y > 0 && fills(rows[y - 1]));
   const found = [];
   const cell = (y, i) => b.getLine(b.viewportY + y)?.getCell(rows[y].col[i]);
 
@@ -150,7 +191,7 @@ function findMath() {
   const isRaw = (y, x0, x1) => (raw.get(y) || []).some(([a, z]) => x0 < z && a < x1);
   let fence0 = false;
   for (let y = Math.max(0, b.viewportY - FENCE_LOOKBACK); y < b.viewportY; y++) {
-    if (FENCE.test(b.getLine(y)?.translateToString(true) ?? '')) fence0 = !fence0;
+    if (FENCE.test(b.getLine(y)?.translateToString(true, xa, xb) ?? '')) fence0 = !fence0;
   }
   const blockBody = (y, end, start) => rows.slice(y + 1, end).map((r) => r.text.slice(start)).join(' ').trim();
   // Multi-row $$ ... $$ / \[ ... \] blocks as openRow -> { end, start }. `$$` opens and closes alike, so when
@@ -194,7 +235,7 @@ function findMath() {
     // ponytail: a soft-wrapped row (narrow window) leaves the table as source; reflowing it would need
     // the logical lines joined first.
     for (let k = y + 1; k <= Math.min(end + 1, rows.length - 1); k++) {
-      if (b.getLine(b.viewportY + k)?.isWrapped) return null;
+      if (wrapped(k)) return null;
     }
     if (cursorRow >= y && cursorRow <= end) return { skip: true, y, rows: end - y + 1 };
     let x0 = term.cols, x1 = 0;
@@ -242,7 +283,7 @@ function findMath() {
     }
     // The logical line: this row plus any soft-wrapped continuation rows (long $$..$$ lines wrap).
     let yEnd = y;
-    while (yEnd + 1 < rows.length && b.getLine(b.viewportY + yEnd + 1)?.isWrapped) yEnd++;
+    while (yEnd + 1 < rows.length && wrapped(yEnd + 1)) yEnd++;
     let gText = '';
     const gCol = [], gWid = [], gRow = [];
     for (let k = y; k <= yEnd; k++) {
@@ -262,19 +303,18 @@ function findMath() {
         if (!isRaw(r0, x0, x1)) found.push({ y: r0, rows: 1, x0, x1, tex, display, c });
       } else if (!gText.slice(0, i0).trim() && !gText.slice(i1).trim()) {
         // wrapped across rows: only when nothing else shares those rows, so covering them full-width is safe
-        found.push({ y: r0, rows: r1 - r0 + 1, x0: 0, x1: term.cols, pad: gCol[i0], wrapped: true, tex, display, c });
+        found.push({ y: r0, rows: r1 - r0 + 1, x0: xa, x1: xb, pad: gCol[i0] - xa, wrapped: true, tex, display, c });
       }
     }
     y = yEnd;
   }
-  grow(found, cursorRow);
-  centerDisplay(found);
-  return joinRows(found);
+  return found;
 }
 
 // Display math is centered on the window (as mdv's is) when its rows, grown ones included, hold nothing
 // else. An editor's line-number gutter may sit to the left: it stays visible and the math is centered in
-// the rest. Anything else on those rows (a split, text beside a one-line $$..$$) keeps the source position.
+// the rest. Centered within its pane when the screen is split (see paneRanges). Anything else on those rows
+// (text beside a one-line $$..$$) keeps the source position.
 function centerDisplay(found) {
   const b = term.buffer.active;
   for (const f of found) {
@@ -283,14 +323,14 @@ function centerDisplay(found) {
     let gutter = 0, ok = true;
     for (let y = f.top; ok && y < f.top + f.span; y++) {
       const line = b.getLine(b.viewportY + y);
-      const left = line?.translateToString(true, 0, src0) ?? '';
-      const right = line?.translateToString(true, f.x1, term.cols) ?? '';
+      const left = line?.translateToString(true, f.xa, src0) ?? '';
+      const right = line?.translateToString(true, f.x1, f.xb) ?? '';
       ok = /^\s*\d*\s*$/.test(left) && !right.trim();
       gutter = Math.max(gutter, left.trimEnd().length);
     }
     if (!ok) continue;
-    f.x0 = gutter ? gutter + 1 : 0;
-    f.x1 = term.cols;
+    f.x0 = f.xa + (gutter ? gutter + 1 : 0);
+    f.x1 = f.xb;
     f.pad = 0;
     f.centered = true;
   }
@@ -303,15 +343,17 @@ function centerDisplay(found) {
 function joinRows(found) {
   const b = term.buffer.active;
   const byRow = new Map();
-  for (const f of found) if (f.rows === 1 && !f.wrapped) byRow.set(f.y, [...(byRow.get(f.y) || []), f]);
-  const out = found.filter((f) => !byRow.has(f.y) || f.rows !== 1 || f.wrapped);
-  for (const [y, ms] of byRow) {
+  const one = (f) => f.rows === 1 && !f.wrapped;
+  for (const f of found) if (one(f)) byRow.set(`${f.xa}:${f.y}`, [...(byRow.get(`${f.xa}:${f.y}`) || []), f]);
+  const out = found.filter((f) => !one(f));
+  for (const ms of byRow.values()) {
+    const y = ms[0].y;
     ms.sort((p, q) => p.x0 - q.x0);
     const line = b.getLine(b.viewportY + y);
     const last = ms[ms.length - 1];
     // End at the row's last text, or before an editor's vertical split.
     let x1 = last.x1;
-    for (let x = last.x1; x < term.cols; x++) {
+    for (let x = last.x1; x < last.xb; x++) {
       const ch = line.getCell(x)?.getChars() || ' ';
       if (ch === '│') break;
       if (ch !== ' ') x1 = x + 1;
@@ -347,27 +389,29 @@ function joinRows(found) {
 // Give each match `top`/`span`: its rows plus empty rows around it (no text under it, not the cursor row,
 // not another match). When two matches share a gap, the upper one gets floor(gap/2) and the lower one
 // gets the rest, so they never overlap.
-function grow(found, cursorRow) {
+function grow(found, cursor) {
   const b = term.buffer.active;
-  const taken = new Set();
-  for (const f of found) for (let k = 0; k < f.rows; k++) taken.add(f.y + k);
+  const taken = new Set(); // `${pane}:${row}`: panes side by side don't block each other's rows
+  for (const f of found) for (let k = 0; k < f.rows; k++) taken.add(`${f.xa}:${f.y + k}`);
   const left = new Map(); // row -> leftmost one-row match: math on that row can be shifted as far as this
-  for (const f of found) if (f.rows === 1 && !f.wrapped) left.set(f.y, Math.min(left.get(f.y) ?? f.x0, f.x0));
-  const free = (y, x0, x1) => y >= 0 && y < term.rows && y !== cursorRow && !taken.has(y) &&
-    (b.getLine(b.viewportY + y)?.translateToString(true, x0, x1) ?? '').trim() === '';
+  for (const f of found) if (f.rows === 1 && !f.wrapped) left.set(`${f.xa}:${f.y}`, Math.min(left.get(`${f.xa}:${f.y}`) ?? f.x0, f.x0));
   for (const f of found) {
+    const isTaken = (y) => taken.has(`${f.xa}:${y}`);
+    const editing = (y) => cursor && y === cursor.y && cursor.x >= f.xa && cursor.x < f.xb;
+    const free = (y, x0, x1) => y >= 0 && y < term.rows && !editing(y) && !isTaken(y) &&
+      (b.getLine(b.viewportY + y)?.translateToString(true, x0, x1) ?? '').trim() === '';
     if (f.table) { f.top = f.y; f.span = f.rows; continue; } // tables keep exactly their rows
     const last = f.y + f.rows - 1;
-    const x0 = f.rows === 1 && !f.wrapped ? left.get(f.y) : f.x0;
+    const x0 = f.rows === 1 && !f.wrapped ? left.get(`${f.xa}:${f.y}`) : f.x0;
     let up = 0, down = 0;
     while (up < 2 * MAX_GROW && free(f.y - 1 - up, x0, f.x1)) up++;
     while (down < 2 * MAX_GROW && free(last + 1 + down, x0, f.x1)) down++;
-    up = Math.min(MAX_GROW, taken.has(f.y - 1 - up) ? Math.ceil(up / 2) : up);
-    down = Math.min(MAX_GROW, taken.has(last + 1 + down) ? Math.floor(down / 2) : down);
+    up = Math.min(MAX_GROW, isTaken(f.y - 1 - up) ? Math.ceil(up / 2) : up);
+    down = Math.min(MAX_GROW, isTaken(last + 1 + down) ? Math.floor(down / 2) : down);
     if (!f.display) up = down = Math.min(up, down);
     f.top = f.y - up;
     f.span = f.rows + up + down;
-    f.overflow = taken.has(f.y - 1) || taken.has(last + 1) ? INLINE_OVERFLOW : LONE_OVERFLOW;
+    f.overflow = isTaken(f.y - 1) || isTaken(last + 1) ? INLINE_OVERFLOW : LONE_OVERFLOW;
   }
 }
 

@@ -10,17 +10,10 @@ Roughly in priority order:
   startup (`main.rs`, before the window opens; `defaults write dev.mathterm ApplePressAndHoldEnabled -bool
   false` to test by hand). Check that non-letter keys (arrows, backspace) already repeat and that accented
   input via Option still works.
-- **tmux split windows (user request).** Auto-detect reads the whole screen row, so with tmux panes side by
-  side the panes' text is mixed:
-  - Row matching (`$$` pairing, fences, tables, `isWrapped`) treats both panes' text as one line. A table
-    or `$$` row in one pane fails to match, or picks up the other pane's `|` characters.
-  - Inline matches crossing `│` are already skipped, `centerDisplay` falls back when a split shares the
-    rows, and `joinRows` stops at `│`. But fence state is shared across panes, and tmux redraws hard-wrap
-    lines, so soft-wrap detection doesn't apply inside tmux.
-  - Fix: find tmux's vertical borders (a column of `│` running the height of the pane, plus the status line
-    at the bottom) and scan each pane as its own column range, with its own fence/block state.
-  - `mdv`'s OSC 7777 doesn't get through tmux by default (needs `allow-passthrough on` and DCS-wrapped
-    sequences), and its line-anchored overlays break when tmux repaints. Auto-detect is the path for tmux.
+- **tmux split windows: fixed for side-by-side panes** (see [changelog.md](changelog.md)). Left: vertical
+  borders inside one half of a top/bottom split, fences/blocks across a horizontal split (rows above and
+  below a `─` border are still one column range), and `mdv`'s OSC 7777 through tmux (needs
+  `allow-passthrough on` and DCS-wrapped sequences).
 
 ## Performance
 
