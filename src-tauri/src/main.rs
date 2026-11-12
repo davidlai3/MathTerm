@@ -83,15 +83,28 @@ fn resize(session: State<Session>, cols: u16, rows: u16) {
     }
 }
 
-/// dev hook: after a few seconds, screenshot just this window to $MATHTERM_SHOT and quit.
-fn shot_after_delay(app: AppHandle, path: String) {
+/// dev hook: screenshot just this window to $MATHTERM_SHOT after a few seconds, then quit.
+/// The window is parked off-screen and the app never activates, so it doesn't interrupt whoever is using
+/// the machine. That works because background throttling is disabled (tauri.conf.json): WebKit keeps
+/// painting the window even though nothing on screen shows it.
+fn shot_after_delay(app: &mut tauri::App, path: String) {
+    app.set_activation_policy(tauri::ActivationPolicy::Accessory); // no Dock icon, no focus steal
+    let app = app.handle().clone();
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_position(tauri::LogicalPosition::new(-20000.0, 0.0));
+    }
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(5));
         if let Some(w) = app.get_webview_window("main") {
-            // WebKit doesn't paint occluded windows, so bring it forward first. Capturing by window id (-l)
-            // keeps other windows or system UI that's on top out of the shot.
-            let _ = w.set_focus();
-            std::thread::sleep(std::time::Duration::from_millis(700));
+            // MATHTERM_SHOT_SIZE=WxH resizes before the shot, to check how math is re-placed after reflow
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            let size = std::env::var("MATHTERM_SHOT_SIZE").ok();
+            if let Some((sw, sh)) = size.as_deref().and_then(|s| s.split_once('x')) {
+                if let (Ok(sw), Ok(sh)) = (sw.parse::<f64>(), sh.parse::<f64>()) {
+                    let _ = w.set_size(tauri::LogicalSize::new(sw, sh));
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            // capture by window id (-l): works off-screen and never includes other windows
             let ns = w.ns_window().unwrap() as *const objc2::runtime::AnyObject;
             let id: isize = unsafe { objc2::msg_send![&*ns, windowNumber] };
             let _ = std::process::Command::new("screencapture")
@@ -106,7 +119,7 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             if let Ok(path) = std::env::var("MATHTERM_SHOT") {
-                shot_after_delay(app.handle().clone(), path);
+                shot_after_delay(app, path);
             }
             Ok(())
         })

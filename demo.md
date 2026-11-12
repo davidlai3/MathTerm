@@ -1,7 +1,9 @@
 # mathterm demo
 
 Euler's identity $e^{i\pi} + 1 = 0$ sits inline, and so does $\alpha^2 + \beta^2$.
-Inline fractions like $\frac{1}{2} + \frac{a}{b}$ get squeezed the most.
+Inline fractions like $\frac{1}{2} + \frac{a}{b}$ fit in their row.
+Taller ones like $\frac{\frac{1}{2}}{x+1}$ or $\sum_{i=1}^{n} i$ get a blank line above and below.
+The next line is normal again.
 
 ## Display math
 

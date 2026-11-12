@@ -25,13 +25,17 @@ INLINE_STYLES = [
 ]
 
 
-def style_line(line, width):
+def style_line(line, width, term_rules):
+    """term_rules: inside mathterm, rules are drawn by the terminal (OSC 7777;rule) so they track resizes."""
+    def rule(kind, char, sgr):
+        return f"\033]7777;rule;{kind}\a" if term_rules else f"\033[{sgr}m{char * width}\033[0m"
+
     if m := re.match(r"(#{1,6})\s+(.*)", line):
-        color = "35" if len(m.group(1)) == 1 else "34"
-        line = f"\033[1;{color}m{m.group(2)}\033[0m"
-        return line + "\n" + "\033[35m" + "═" * width + "\033[0m" if color == "35" else line
+        if len(m.group(1)) == 1:
+            return f"\033[1;35m{m.group(2)}\033[0m\n" + rule("h1", "═", "35")
+        return f"\033[1;34m{m.group(2)}\033[0m"
     if re.fullmatch(r"\s*([-*_])(\s*\1){2,}\s*", line):
-        return "\033[2m" + "─" * width + "\033[22m"
+        return rule("hr", "─", "2")
     line = re.sub(r"^(\s*)[-*+]\s+", "\\1• ", line)
     line = re.sub(r"^>\s?", "\033[2m│\033[22m ", line)
     for rx, rep in INLINE_STYLES:
@@ -95,10 +99,15 @@ def render(text, width, sizer=None):
             out.append(code_block(part))
             continue
         part = MATH.sub(stash_math, CODE.sub(stash_code, part))
-        out.append("\n".join(style_line(l, width) for l in part.split("\n")))
+        out.append("\n".join(style_line(l, width, sizer is not None) for l in part.split("\n")))
     s = CODE_PH.sub(lambda m: CODE_ON + codes[int(m.group(1))] + FG_OFF, "".join(out))
 
     sizes = sizer([(t, d) for t, d, _ in maths]) if sizer and maths else None
+    if sizes:
+        # tall inline math (rows > 1) is drawn centered on its row: give it a blank line above and below
+        def tall(line):
+            return any(not maths[int(n)][1] and sizes[int(n)][1] > 1 for n in MATH_PH.findall(line))
+        s = "\n".join(f"\n{l}\n" if tall(l) else l for l in s.split("\n"))
 
     def emit(m):
         n = int(m.group(1))
@@ -111,8 +120,8 @@ def render(text, width, sizer=None):
             # reuse the source's own line breaks around $$..$$ instead of adding blank lines
             lead = "" if m.start() == 0 or s[m.start() - 1] == "\n" else "\n"
             tail = rows - 1 if s[m.end():m.end() + 1] == "\n" else rows
-            return lead + " " * ((width - cols) // 2) + osc(tex, cols, rows, True) + "\n" * tail
-        return osc(tex, cols, 1, False) + " " * cols  # spaces reserve the cells the overlay covers
+            return lead + osc(tex, cols, rows, True) + "\n" * tail  # the terminal centers it
+        return osc(tex, cols, rows, False) + " " * cols  # spaces reserve the cells the overlay covers
 
     return MATH_PH.sub(emit, s)
 
@@ -122,9 +131,11 @@ def test():
     # math
     assert render("a $x^2$ b", 80, fixed) == "a \033]7777;4;1;i;x^2\a     b"
     assert render("costs $5 and $10", 80, fixed) == "costs $5 and $10"
-    assert render("$$\na \\\\ b\n$$", 20, fixed) == " " * 5 + "\033]7777;10;2;d;a \\\\ b\a\n\n"
-    assert render("x\n$$y$$\nz", 20, fixed) == "x\n" + " " * 5 + "\033]7777;10;2;d;y\a\n\nz"
-    assert render("x $$y$$ z", 20, fixed) == "x \n" + " " * 5 + "\033]7777;10;2;d;y\a\n\n z"
+    assert render("$$\na \\\\ b\n$$", 20, fixed) == "\033]7777;10;2;d;a \\\\ b\a\n\n"
+    assert render("x\n$$y$$\nz", 20, fixed) == "x\n\033]7777;10;2;d;y\a\n\nz"
+    assert render("x $$y$$ z", 20, fixed) == "x \n\033]7777;10;2;d;y\a\n\n z"
+    tall = lambda maths: [(4, 3) for _ in maths]
+    assert render("a\n$\\frac12$ b\nc", 80, tall) == "a\n\n\033]7777;4;3;i;\\frac12\a     b\n\nc"
     assert render("a $x^2$ b", 80) == "a $x^2$ b"  # no sizer: math left as source
     assert guess_sizes([("a \\\\ b", True)]) == [(5, 4)]
     # code is never math or styled
@@ -135,7 +146,9 @@ def test():
     assert render("**b** and *i*", 80) == "\033[1mb\033[22m and \033[3mi\033[23m"
     assert render("my_var_name", 80) == "my_var_name"
     assert render("- item\n  * sub", 80) == "• item\n  • sub"
-    assert render("---", 3) == "\033[2m───\033[22m"
+    assert render("---", 3) == "\033[2m───\033[0m"
+    assert render("---", 3, fixed) == "\033]7777;rule;hr\a"
+    assert render("# T", 3, fixed) == "\033[1;35mT\033[0m\n\033]7777;rule;h1\a"
     assert render("[t](http://x)", 80) == "\033[4;34mt\033[24;39m \033[2m(http://x)\033[22m"
     assert render("**bold $x$**", 80, fixed) == "\033[1mbold \033]7777;4;1;i;x\a    \033[22m"
     print("ok")

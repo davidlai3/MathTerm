@@ -40,14 +40,16 @@ With output redirected (`mdv f.md > out`) it prints the file unchanged.
 
 Early prototype. What works:
 
-- Inline and display math in markdown, sized by the terminal and centered.
+- Inline and display math in markdown, sized by the terminal. Display math is centered, and tall inline
+  math (nested fractions, sums with limits) gets extra line spacing.
+- Math and rules follow their text when the window is resized and lines re-wrap.
 - Markdown styling: headings, bold/italic/strikethrough, inline and fenced code, lists, quotes, rules, links.
 - `$5`-style dollar amounts, code spans and code blocks are never treated as math.
 
 Known gaps:
 
-- Inline fractions render small, because inline math stays within one row (+25%).
 - Tables print raw. Code blocks have no syntax highlighting. Long lines aren't re-wrapped.
-- Resizing the window misplaces math that's already on screen.
+- Text printed before a resize keeps its original line spacing. For example, tall inline math shrinks to
+  one row instead of gaining space if its line re-wraps.
 
 The full plan and changelog are in [NOTES.md](NOTES.md).

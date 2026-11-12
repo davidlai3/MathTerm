@@ -24,10 +24,18 @@ listener, so the first prompt isn't lost.
 query:  ESC ] 7777 ; ? ; <i|d> ; <latex> BEL           (program -> terminal)
 reply:  ESC ] 7777 ; = ; <cols> ; <rows> BEL            (terminal -> program, on its stdin/tty)
 draw:   ESC ] 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL
+rule:   ESC ] 7777 ; rule ; <h1|hr> BEL                 (full-width line on the current row)
 ```
 
-- `i` = inline (squeezed into one row), `d` = display.
-- `draw` overlays KaTeX on a `cols x rows` box starting at the cursor. The **sender** reserves the space:
+- `i` = inline, `d` = display.
+- Inline `rows` is 1 (fits its row, may spill 25% above/below) or 3 ("tall": scale would drop below
+  `TALL_SCALE` = 0.85, so the sender puts a blank line above and below that line and the math is drawn
+  centered on its row with up to 3 rows of height). On every placement the terminal checks that the rows
+  above and below are empty under the math; if not (e.g. wrapped text after a resize), it fits one row.
+- Display math is centered by the terminal (x is ignored), which keeps it centered after a resize.
+- `rule` lines are drawn by the terminal at the current width, so they never wrap. Outside mathterm,
+  `mdv` falls back to `═`/`─` characters.
+- `draw` overlays KaTeX on a `cols x rows` box at the cursor. The **sender** reserves the space:
   spaces after an inline draw, newlines after a display draw. The terminal never moves the cursor.
 - LaTeX must not contain newlines, ESC or BEL (mdv collapses whitespace).
 - Replies arrive in query order. `mdv` sends all queries in one batch, reads replies from `/dev/tty` in raw
@@ -44,12 +52,44 @@ npm run shot       # launch, run `mdv demo.md`, screenshot just the window to sh
 bin/mdv --test     # mdv self-check
 ```
 
-- Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (after 5s, focus
-  the window and `screencapture -l <window id>` to that path, then quit). It briefly steals focus, because
-  WebKit doesn't paint occluded windows and the capture comes out blank otherwise.
+- Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed at startup), `MATHTERM_SHOT` (screenshot to that
+  path after 5s, then quit), `MATHTERM_SHOT_SIZE=WxH` (resize before the shot, to test reflow).
+- Shot mode never touches the screen. The window is parked off-screen, the app uses the Accessory
+  activation policy (no Dock icon, no focus steal), and the capture is `screencapture -l <window id>`.
+  This relies on `backgroundThrottling: "disabled"` in `tauri.conf.json`: without it, WebKit stops painting
+  a window that isn't visible (e.g. when you click away) and the shot comes out blank or missing.
+- Gotcha: xterm sets an inline `display: block` on decoration elements, so CSS `display: flex` on them is
+  ignored. Overlay children are absolutely positioned instead.
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: rough edges: tall overlap, rules, screenshots
+- **Tall inline math vs. re-wrapped text:** `place()` checks the rows above/below for text under the math
+  (`rowFree`) and falls back to the 1-row size if either is occupied. Re-checked on every resize, so it
+  regains full size when the window widens again.
+- **Rules:** new `OSC 7777;rule;<h1|hr>`. The terminal draws a full-width line and re-places it on resize.
+  `mdv` uses it for the h1 underline and `---`.
+- **Centering bug:** `.math` relied on `display: flex`, which xterm's inline `display: block` overrode, so
+  inline math sat at the top of its row and only spilled downward. Overlay content is now absolutely
+  positioned and centered with `translate(-50%)`.
+- **`npm run shot` reliability:** shots failed when the window got covered (e.g. clicking away while working).
+  Disabled background throttling. Shot mode now parks the window off-screen, never activates the app,
+  and no longer calls `set_focus`.
+
+### 2026-11-11: tall inline math, resize re-placement
+- **Fixed fraction shrink bug.** Drawing scaled with `scrollWidth/Height`, which also counts KaTeX's hidden
+  MathML copy. WebKit lays that copy out taller for fractions, so they rendered at ~0.6x even though they fit.
+  Drawing now uses `getBoundingClientRect`, like `measure()`. Simple fractions render at full size in one row.
+- **Tall inline math:** if the scale would still drop below 0.85 (nested fractions, `\sum` with limits), the
+  terminal reports `rows = 3` and `mdv` adds a blank line above and below that line.
+- **Resize:** each drawn expression is stored with a marker on the first row of its logical line plus a
+  column offset. On `term.onResize` every decoration is re-placed at `row = offset / cols`,
+  `x = offset % cols`, so inline math follows its text when lines re-wrap. Display math is re-centered.
+  Expressions whose marker has left the scrollback are dropped.
+- `mdv` no longer pads display math with spaces (the terminal centers it). Padding was real cells that would
+  wrap on narrow windows.
+- Added `MATHTERM_SHOT_SIZE`. Verified at 900 and 380 px wide.
 
 ### 2026-11-11: markdown styling in mdv
 - `mdv` styles headings (h1 magenta with a rule, h2+ blue), bold, italic (`*` and `_`, but not snake_case),
@@ -92,14 +132,10 @@ bin/mdv --test     # mdv self-check
 
 Roughly in priority order:
 
-1. **Inline fractions are small.** Inline math now gets 1.25 rows, which covers superscripts. Next option if
-   fractions bother us: give inline math 2 rows when its scale would drop below ~0.7 (cost: uneven line spacing).
-2. **Markdown gaps.** Tables print raw. Code blocks have no syntax highlighting (pygments isn't stdlib).
+1. **Markdown gaps.** Tables print raw. Code blocks have no syntax highlighting (pygments isn't stdlib).
    Links aren't clickable (would need OSC 8 + an xterm.js link handler + Tauri's opener plugin).
-3. **Resize / reflow.** Decorations keep their original x and line, so window resizes misalign them.
-   Re-render on resize, or drop math whose line reflowed.
-4. **Line wrap.** Inline math that straddles the right edge is clipped. `mdv` could wrap the text itself.
-5. **Selection / copy.** Copying a math region yields spaces. Could put the LaTeX source on the clipboard.
-6. **`tex` one-liner** (`tex '\sqrt{2}'`) and a shell hook so normal command output can contain math.
-7. Later: tabs/splits, config (font, theme), packaging as a `.app` (needs `bin/` bundled as a resource,
+2. **Line wrap.** Inline math that straddles the right edge is clipped. `mdv` could wrap the text itself.
+3. **Selection / copy.** Copying a math region yields spaces. Could put the LaTeX source on the clipboard.
+4. **`tex` one-liner** (`tex '\sqrt{2}'`) and a shell hook so normal command output can contain math.
+5. Later: tabs/splits, config (font, theme), packaging as a `.app` (needs `bin/` bundled as a resource,
    real icons, `bundle.active = true`).

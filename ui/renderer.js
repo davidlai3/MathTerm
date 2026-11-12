@@ -37,40 +37,99 @@ function cellSize() {
 
 // Inline math may spill this far past its row (split above/below) before being shrunk.
 const INLINE_OVERFLOW = 1.25;
+// Below this scale, inline math is reported as 3 rows tall: the sender adds a blank line above and below.
+const TALL_SCALE = 0.85;
 
-// Size of `tex` in cells. Inline math is squeezed into one row, so its width is taken after scaling.
+// Size of `tex` in cells. Inline width is taken after scaling to fit its rows.
 function measure(tex, display) {
   katex.render(tex, probe, { displayMode: display, throwOnError: false });
   const { width, height } = probe.getBoundingClientRect();
   const [cw, ch] = cellSize();
   if (display) return [Math.ceil(width / cw), Math.ceil(height / ch)];
-  return [Math.ceil((width * Math.min(1, (INLINE_OVERFLOW * ch) / height)) / cw), 1];
+  const s1 = Math.min(1, (INLINE_OVERFLOW * ch) / height);
+  if (s1 >= TALL_SCALE) return [Math.ceil((width * s1) / cw), 1];
+  return [Math.ceil((width * Math.min(1, (3 * ch) / height)) / cw), 3];
 }
 
-function draw(tex, display, cols, rows) {
-  const deco = term.registerDecoration({
-    marker: term.registerMarker(0),
-    x: term.buffer.active.cursorX,
-    width: cols,
-    height: rows,
-    layer: 'top',
-  });
-  deco?.onRender((el) => {
-    if (el.dataset.tex) return;
-    el.dataset.tex = '1';
-    el.classList.add('math', display ? 'display' : 'inline');
+// Everything drawn (math and rules), so it can be re-placed when the terminal is resized and lines re-wrap.
+// `marker` sits on the first row of the logical (unwrapped) line; `offset` is the column within that line.
+const items = [];
+
+// True if row `line` has no text in columns [x, x + width): tall inline math may spill into it.
+function rowFree(line, x, width) {
+  const row = term.buffer.active.getLine(line);
+  return !row || row.translateToString(true, x, x + width).trim() === '';
+}
+
+function place(item) {
+  item.deco?.dispose();
+  item.rowMarker?.dispose();
+  item.rowMarker = null;
+  const b = term.buffer.active, C = term.cols;
+  let line = item.marker.line, x, width = Math.min(item.cols, C);
+  if (item.rule) {
+    x = 0; width = C; // rules always span the current width
+  } else if (item.display) {
+    x = Math.floor((C - width) / 2); // display math is centered by the terminal
+  } else {
+    line += Math.floor(item.offset / C);
+    x = item.offset % C;
+    width = Math.min(width, C - x); // straddling the right edge: shrink rather than spill
+  }
+  // Tall inline math only uses the rows above/below while they're empty under it. After a narrowing
+  // resize they may hold wrapped text, and it falls back to fitting its own row.
+  const room = item.rows > 1 && !item.display && !(rowFree(line - 1, x, width) && rowFree(line + 1, x, width))
+    ? 1 : item.rows;
+  let marker = item.marker;
+  if (line !== marker.line) marker = item.rowMarker = term.registerMarker(line - (b.baseY + b.cursorY));
+  item.deco = term.registerDecoration({ marker, x, width, height: item.display ? item.rows : 1, layer: 'top' });
+  item.deco?.onRender((el) => {
+    if (el.dataset.done) return;
+    el.dataset.done = '1';
+    if (item.rule) {
+      el.classList.add('rule', `rule-${item.rule}`);
+      return;
+    }
+    el.classList.add('math', item.display ? 'display' : 'inline');
     const inner = document.createElement('div');
-    katex.render(tex, inner, { displayMode: display, throwOnError: false });
+    katex.render(item.tex, inner, { displayMode: item.display, throwOnError: false });
     el.appendChild(inner);
-    const maxH = el.clientHeight * (display ? 1 : INLINE_OVERFLOW);
-    const s = Math.min(1, el.clientWidth / inner.scrollWidth, maxH / inner.scrollHeight);
-    inner.style.transform = `scale(${s})`;
+    const maxH = el.clientHeight * (item.display ? 1 : Math.max(INLINE_OVERFLOW, room));
+    // getBoundingClientRect, like measure(): scrollWidth/Height also count KaTeX's hidden MathML copy,
+    // which WebKit lays out taller for fractions and made them shrink for no reason
+    const r = inner.getBoundingClientRect();
+    const s = Math.min(1, el.clientWidth / r.width, maxH / r.height);
+    inner.style.transform = `${item.display ? 'translate(-50%, -50%)' : 'translateY(-50%)'} scale(${s})`;
   });
 }
+
+function draw(fields) {
+  const b = term.buffer.active;
+  const y = b.baseY + b.cursorY;
+  let start = y;
+  while (start > 0 && b.getLine(start)?.isWrapped) start--;
+  const item = {
+    ...fields,
+    marker: term.registerMarker(start - y),
+    offset: (y - start) * term.cols + b.cursorX,
+  };
+  if (!item.marker) return;
+  items.push(item);
+  place(item);
+}
+
+// ponytail: re-renders every item's KaTeX on each resize; cache the rendered HTML if long scrollback gets slow
+term.onResize(() => {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].marker.isDisposed) items.splice(i, 1); // scrolled out of the scrollback
+    else place(items[i]);
+  }
+});
 
 // Protocol (see NOTES.md):
 //   query:  OSC 7777 ; ? ; <i|d> ; <latex> BEL      -> reply OSC 7777 ; = ; <cols> ; <rows> BEL
-//   draw:   OSC 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL
+//   draw:   OSC 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL   (inline rows > 1 = tall, see TALL_SCALE)
+//   rule:   OSC 7777 ; rule ; <h1|hr> BEL                     (full-width line on the current row)
 term.parser.registerOscHandler(7777, (payload) => {
   let m = /^\?;([id]);([\s\S]*)$/.exec(payload);
   if (m) {
@@ -80,7 +139,12 @@ term.parser.registerOscHandler(7777, (payload) => {
   }
   m = /^(\d+);(\d+);([id]);([\s\S]*)$/.exec(payload);
   if (m) {
-    draw(m[4], m[3] === 'd', +m[1], +m[2]);
+    draw({ tex: m[4], display: m[3] === 'd', cols: +m[1], rows: +m[2] });
+    return true;
+  }
+  m = /^rule;(h1|hr)$/.exec(payload);
+  if (m) {
+    draw({ rule: m[1], cols: 0, rows: 1 });
     return true;
   }
   return false;
