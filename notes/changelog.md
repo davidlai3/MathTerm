@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-12: matrices under nvim's conceal
+- In normal mode nvim conceals markdown escapes (`\\` shows as `\`, `\{` as `{`), so a `bmatrix` arrived with no
+  row breaks and rendered as one row (user screenshot; fine in insert mode, where conceal is off). `unstrip`
+  now restores `\\` for a lone `\` before whitespace inside matrix-like environments (`ROWS_ENV`: matrix
+  variants, `cases`, `aligned`, `align`, `array`, `gathered`, `split`, ...). Claude Code strips the same escape.
+- Braces (`\{1, \ldots, m\}` -> `{1, \ldots, m}`) still can't be repaired: `{..}` is also plain grouping.
+  The nvim-side fix is `conceallevel=0` for markdown.
+- Verified: unit test of `unstrip` and a screenshot of the concealed matrix.
+
 ## 2026-11-12: `autoDetectTables` config
 - `"autoDetectTables": false` turns off auto-detected tables (user wants nvim plugins to draw them); math in
   table rows is still typeset. Default on.

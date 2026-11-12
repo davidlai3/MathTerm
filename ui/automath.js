@@ -111,10 +111,17 @@ function katexHtml(tex, display) {
   return htmlCache.get(key);
 }
 
-// Claude Code's markdown unescapes `\!` to `!`, so `\sin\!\left(` arrives as `\sin!\left(`. A `!` right
-// after a command name (or big-O: `O\!\left(`) is never a factorial in practice, so put the backslash back.
-// The other stripped escapes (`\,` `\{` `\\`) can't be told apart from real text.
-const unstrip = (tex) => tex.replace(/(\\[a-zA-Z]+|\bO)!/g, '$1\\!');
+// Markdown escapes get eaten before the math reaches the screen: Claude Code's renderer unescapes them, and
+// nvim conceals them in normal mode (`\\` shows as `\`, `\{` as `{`). Two are repairable:
+// - `\!` -> `!`: so `\sin\!\left(` arrives as `\sin!\left(`. A `!` right after a command name (or big-O:
+//   `O\!\left(`) is never a factorial in practice, so put the backslash back.
+// - `\\` -> `\` inside matrix-like environments: a lone `\` before whitespace there is a row break, not a
+//   control space, so restore `\\` (otherwise every row of a matrix lands on one line).
+// The others (`\,` `\{` outside environments) can't be told apart from real text.
+const ROWS_ENV = /\\begin\{((?:[pbBvV]?|small)matrix|cases|aligned|alignedat|align\*?|array|gathered|gather\*?|split|eqnarray\*?)\}([\s\S]*?)\\end\{\1\}/g;
+const unstrip = (tex) => tex
+  .replace(/(\\[a-zA-Z]+|\bO)!/g, '$1\\!')
+  .replace(ROWS_ENV, (m, env, body) => m.replace(body, () => body.replace(/(?<!\\)\\(?=\s|$)/g, '\\\\')));
 
 function findMath() {
   const b = term.buffer.active;
