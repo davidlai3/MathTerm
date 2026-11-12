@@ -2,7 +2,8 @@
 // the source's own cells. Works for programs that never send OSC 7777: Claude Code, cat, nvim while editing.
 // Overlays are screen-positioned and rebuilt from the viewport after every render, diffed by key, so
 // unchanged math is left alone. The cursor row (or a block containing it) keeps showing the source.
-// Toggle: Cmd-Shift-M. Uses `term`, `flash`, `keyBindings`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans`, `fitInk` from renderer.js
+// Toggle: Cmd-Shift-M. Ignore list: `autoDetectIgnore` in config.json.
+// Uses `term`, `invoke`, `config`, `flash`, `keyBindings`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans`, `fitInk` from renderer.js
 // and `ANSI_KEYS` from themes.js.
 
 let autoMath = true;
@@ -207,11 +208,41 @@ function makeOverlay(item, cw, ch) {
   return el;
 }
 
+// Ignore list: while the foreground program was started on a matching file (e.g. `nvim hw7.tex`), or the
+// window title names one (nvim with `set title` updates it on :e), detection pauses. Patterns are globs
+// matched against the basename of every argument, so a program name ("htop") works too.
+const DEFAULT_IGNORE = ['*.tex', '*.sty', '*.cls'];
+let ignoredBy = null; // the matching argument while paused
+let title = '';
+term.onTitleChange((t) => { title = t; checkIgnore(); });
+
+function globToRegex(glob) {
+  const body = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]');
+  return new RegExp(`^${body}$`, 'i');
+}
+function ignoreMatch(text) {
+  const pats = (config.autoDetectIgnore ?? DEFAULT_IGNORE).map(globToRegex);
+  for (const tok of text.split(/[\s()"']+/)) {
+    const base = tok.split('/').pop();
+    if (base && pats.some((rx) => rx.test(base))) return base;
+  }
+  return null;
+}
+async function checkIgnore() {
+  const args = await invoke('foreground').catch(() => '');
+  const hit = ignoreMatch(args) || ignoreMatch(title);
+  if (hit === ignoredBy) return;
+  ignoredBy = hit;
+  if (hit && autoMath) flash(`auto math paused for ${hit}`, 2000);
+  queueScan();
+}
+setInterval(checkIgnore, 500);
+
 let scanQueued = false;
 function scan() {
   scanQueued = false;
   const want = new Map();
-  if (autoMath) {
+  if (autoMath && !ignoredBy) {
     const [cw, ch] = cellSize();
     for (const it of findMath()) {
       const key = [it.top, it.span, it.y, it.rows, it.x0, it.x1, it.display, it.tex, it.c && cellColor(it.c, true),
@@ -241,7 +272,7 @@ term.onCursorMove(queueScan);
 keyBindings.push((e) => {
   if (!(e.metaKey && e.shiftKey && e.key.toLowerCase() === 'm')) return false;
   autoMath = !autoMath;
-  flash(`auto math: ${autoMath ? 'on' : 'off'}  ·  ⌘⇧M`, 1200);
+  flash(`auto math: ${autoMath ? 'on' : 'off'}${autoMath && ignoredBy ? ` (paused for ${ignoredBy})` : ''}  ·  ⌘⇧M`, 1500);
   queueScan();
   return true;
 });

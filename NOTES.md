@@ -54,7 +54,8 @@ raw:    ESC ] 7777 ; raw ; <len> BEL                    (next len cells are lite
 
 - `~/.config/mathterm/config.json` (or `$MATHTERM_CONFIG`), read by the Rust `config` command at startup and
   parsed in the frontend, so a broken file shows an error in the status bar instead of failing:
-  `{ "theme": "catppuccin-mocha" | { ...ITheme }, "fontSize": 14, "fontFamily": "Menlo, monospace" }`.
+  `{ "theme": "catppuccin-mocha" | { ...ITheme }, "fontSize": 14, "fontFamily": "Menlo, monospace",
+  "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"] }`.
   A custom theme object is merged over `default`, so a partial one works.
 - `applyTheme` sets xterm's theme plus CSS variables (`--bg`, `--fg`, `--dim`, `--h1`, `--status-bg`) for
   everything drawn outside xterm: math overlays, rules, the status bar. Auto-detect resolves palette
@@ -88,6 +89,13 @@ For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). 
 - Skipped: the cursor row, and any block containing it (so you can edit the source); rows inside ``` fences
   (tracked from the top of the viewport); matches inside `inline code` (odd backtick count before them);
   cells marked `raw`; anything KaTeX fails to parse; matches crossing `│` (editor splits).
+- **Ignore list** (`autoDetectIgnore`, default `*.tex`, `*.sty`, `*.cls`): detection pauses while the
+  foreground program's command line, or the window title, has an argument whose basename matches a glob.
+  The terminal can't see which file an editor has open, so it asks: the Rust `foreground` command gets the
+  pty's foreground process group (`process_group_leader`) and runs `ps -ww -o args=` only when that pid
+  changes. The frontend polls every 500ms. The title covers nvim's `:e` to another file when `set title` is on.
+  Limits: a file opened later without `set title` isn't seen. Output already printed (e.g. `cat x.tex`) is
+  rendered again once the shell is back in the foreground. It pauses the whole screen, not regions.
 - Overlays are keyed by position + tex + colors + cell size and diffed each scan. KaTeX HTML is cached by
   tex, so steady screens and blinking cursors cost only the row scan.
 
@@ -122,6 +130,13 @@ bin/mdv --test     # mdv self-check
 - `src-tauri/icons/icon.png` is a placeholder (Tauri needs one to compile). Run `npx tauri icon <png>` for a real one.
 
 ## Changelog
+
+### 2026-11-11: auto-detect ignore list
+- `autoDetectIgnore` globs in config.json (default `*.tex`, `*.sty`, `*.cls`: LaTeX sources usually have a PDF
+  next to them). Matched against the foreground process's arguments and the window title. The status bar
+  says "auto math paused for hw7.tex" when it kicks in.
+- New Rust command `foreground` (cached `ps` lookup of the pty's foreground process group).
+- Verified: identical content in `notes.tex` stays raw in nvim, and `notes.md` is typeset.
 
 ### 2026-11-11: README leads with auto-detect
 - Auto-detect is the main feature. OSC 7777 is effectively `mdv`'s private channel (nothing else sends it),

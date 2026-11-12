@@ -92,6 +92,24 @@ fn resize(session: State<Session>, cols: u16, rows: u16) {
     }
 }
 
+/// Command line of the pty's foreground process (e.g. "nvim hw7.tex"), for auto-detect's ignore list.
+/// Polled by the frontend; `ps` only runs when the foreground process changes.
+#[derive(Default)]
+struct Foreground(Mutex<(i32, String)>);
+
+#[tauri::command]
+fn foreground(session: State<Session>, cache: State<Foreground>) -> String {
+    let Some(pid) = session.0.lock().unwrap().as_ref().and_then(|p| p.master.process_group_leader()) else {
+        return String::new();
+    };
+    let mut c = cache.0.lock().unwrap();
+    if c.0 != pid {
+        let out = std::process::Command::new("ps").args(["-ww", "-o", "args=", "-p", &pid.to_string()]).output();
+        *c = (pid, out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default());
+    }
+    c.1.clone()
+}
+
 /// Contents of ~/.config/mathterm/config.json (or $MATHTERM_CONFIG), or "" if there isn't one.
 /// The frontend parses it, so a broken file shows an error in the window instead of failing here.
 #[tauri::command]
@@ -162,7 +180,8 @@ fn main() {
             Ok(())
         })
         .manage(Session::default())
-        .invoke_handler(tauri::generate_handler![start, write, resize, open_url, config])
+        .manage(Foreground::default())
+        .invoke_handler(tauri::generate_handler![start, write, resize, open_url, config, foreground])
         .run(tauri::generate_context!())
         .expect("error while running mathterm");
 }

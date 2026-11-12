@@ -36,11 +36,21 @@ npm start
 `~/.config/mathterm/config.json`:
 
 ```json
-{ "theme": "catppuccin-mocha", "fontSize": 14, "fontFamily": "Menlo, monospace" }
+{
+  "theme": "catppuccin-mocha",
+  "fontSize": 14,
+  "fontFamily": "Menlo, monospace",
+  "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"]
+}
 ```
 
 Built-in themes are `default` and `catppuccin-mocha`. `theme` can also be an object with xterm.js theme
 keys (`background`, `foreground`, `black` ... `brightWhite`) to use any other scheme.
+
+`autoDetectIgnore` pauses math detection while the running program was opened on a matching file, e.g.
+`nvim hw7.tex`, since a `.tex` source usually has its PDF next to it. Patterns are globs matched against the
+file name of each argument, so program names work too (`"htop"`). The value shown is the default. With
+nvim's `set title`, switching files with `:e` is picked up as well.
 
 | Keys | |
 |---|---|

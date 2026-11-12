@@ -55,7 +55,9 @@ function setFontSize(px) {
   relayout();
 }
 
-// ~/.config/mathterm/config.json: { "theme": "catppuccin-mocha" | {..ITheme..}, "fontSize": 14, "fontFamily": "..." }
+// ~/.config/mathterm/config.json: { "theme": "catppuccin-mocha" | {..ITheme..}, "fontSize": 14, "fontFamily": "...",
+//   "autoDetectIgnore": ["*.tex", ...] }
+let config = {}; // the parsed config.json, for other modules (automath.js reads autoDetectIgnore)
 function applyConfig(text) {
   let cfg = {};
   try {
@@ -63,6 +65,7 @@ function applyConfig(text) {
   } catch (e) {
     flash(`config.json: ${e.message}`, 5000);
   }
+  config = cfg;
   if (typeof cfg.theme === 'string' && !THEMES[cfg.theme]) {
     flash(`config.json: unknown theme "${cfg.theme}" (built-in: ${Object.keys(THEMES).join(', ')})`, 5000);
   }
