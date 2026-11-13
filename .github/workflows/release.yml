@@ -1,0 +1,47 @@
+# Builds mathterm.app (universal: Apple silicon + Intel) and attaches it to a GitHub Release.
+# Push a tag to release:  git tag v0.1.0 && git push origin v0.1.0
+# Run it by hand from the Actions tab to just get the zip as a build artifact.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Rust targets for a universal binary
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Install (also vendors xterm.js and KaTeX into ui/)
+        run: npm ci
+
+      - name: Build the app
+        run: npx tauri build --target universal-apple-darwin
+
+      - name: Zip it
+        # ditto keeps the bundle's symlinks, permissions and signature intact (plain zip can break them)
+        run: ditto -c -k --keepParent src-tauri/target/universal-apple-darwin/release/bundle/macos/mathterm.app mathterm-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mathterm-macos
+          path: mathterm-macos.zip
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" mathterm-macos.zip --title "mathterm $GITHUB_REF_NAME" --generate-notes

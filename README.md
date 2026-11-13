@@ -4,7 +4,7 @@ A terminal that typesets LaTeX. Any `$...$` that shows up on screen is rendered 
 vector text, the same way Obsidian or a browser shows it. That includes `cat` output, Claude Code's
 replies, and the file you're editing in nvim. No plugins, and no cooperation from the program.
 
-![nvim editing a markdown file in mathterm: the math is typeset in place, the cursor line shows its source](docs/nvim.png)
+![Claude Code explaining the Riemann hypothesis in mathterm: inline and display math typeset in its replies](docs/claude-code.png)
 
 ## How it works
 
@@ -24,13 +24,28 @@ math over the cells where the source sits, in the source's own colors.
   flush against it.
 - **Copy works:** the cells still hold the source, so copying an equation gives you its LaTeX.
 
-![Claude Code explaining the Riemann hypothesis in mathterm: inline and display math typeset in its replies](docs/claude-code.png)
+![nvim editing a markdown file in mathterm: the math is typeset in place, the cursor line shows its source](docs/nvim.png)
 
 Cmd-Shift-M toggles detection.
 
-## Install and run
+## Install
 
-Requires macOS, Node, Rust (`brew install rust`) and Python 3.
+macOS only for now (Apple silicon and Intel).
+
+1. Download `mathterm-macos.zip` from [Releases](https://github.com/davidlai3/MathTerm/releases) and unzip it.
+2. Move `mathterm.app` to Applications.
+3. The app isn't notarized by Apple yet, so macOS blocks the first launch. Right-click it and choose
+   **Open**, or run:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/mathterm.app
+   ```
+
+`mdv` (below) is bundled and on mathterm's `PATH`. It needs Python 3 (`xcode-select --install` provides it).
+
+### Build from source
+
+Requires Node, Rust (`brew install rust`) and Python 3.
 
 ```sh
 npm install
@@ -105,6 +120,9 @@ Early prototype, macOS only. Known gaps:
 - On a soft-wrapped line, a word the terminal split at the edge stays split after the gap closes.
 - TUIs that draw code blocks without backticks (Claude Code does) can get `$var$`-like text typeset.
 - In `mdv`, tables wider than the window wrap and break their borders.
+
+Detection is heuristic, so real examples help most. If something renders wrong, please
+[open an issue](https://github.com/davidlai3/MathTerm/issues/new/choose) with the raw text.
 
 ## Roadmap
 

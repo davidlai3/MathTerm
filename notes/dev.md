@@ -30,3 +30,13 @@ bin/mdv --test     # mdv self-check
 - App icon: `src-tauri/icons/icon.png` (1024px) and `icon.icns`, both written by `make_icon.py` (Pillow, KaTeX's
   own fonts) on the macOS grid (824px rounded square, transparent margin). Embedded at compile time, so
   restart `npm start` after changing it.
+
+## Releasing
+
+- `.github/workflows/release.yml` builds a universal `mathterm.app` on a macOS runner and attaches
+  `mathterm-macos.zip` to a GitHub Release. Bump `version` in `package.json`, `src-tauri/tauri.conf.json` and
+  `src-tauri/Cargo.toml`, commit, then `git tag v0.1.0 && git push origin v0.1.0`. Running the workflow
+  by hand (Actions tab) builds the zip as an artifact without releasing.
+- The app is ad-hoc signed (`signingIdentity: "-"`), not notarized, so users have to right-click → Open
+  the first time (README says so). Notarizing needs an Apple Developer ID; Tauri picks it up from the
+  `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` (or API key) env vars, which would go in repo secrets.

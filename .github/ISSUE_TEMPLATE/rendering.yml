@@ -1,0 +1,43 @@
+name: Math renders wrong (or not at all)
+description: Something on screen was typeset badly, left raw, or typeset when it shouldn't be.
+labels: [rendering]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Detection works from what's on screen, so the exact text is the most useful thing you can send.
+        Thanks for taking the time!
+  - type: input
+    id: program
+    attributes:
+      label: Program
+      description: What was running? (Claude Code, nvim, cat, tmux, ...) Include versions if you know them.
+      placeholder: Claude Code 2.1, inside tmux
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Raw text
+      description: |
+        The text as it looked on screen (toggle detection off with Cmd-Shift-M and copy it),
+        or the original markdown/LaTeX if you have it.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Drag an image in, if you can.
+  - type: input
+    id: version
+    attributes:
+      label: mathterm version / commit
+      placeholder: v0.1.0
