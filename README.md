@@ -136,6 +136,14 @@ Detection is heuristic, so real examples help most. If something renders wrong, 
 
 The [plans](notes/plans.md) and [changelog](notes/changelog.md) are in `notes/`.
 
+## How this was built
+
+mathterm was built with heavy use of AI: most of the code was written by Claude (Anthropic's model) through
+Claude Code, from my direction, testing and bug reports. I set the design and priorities and checked every
+change against real use (Claude Code chats, nvim, tmux). The development notes in [`notes/`](notes/) record
+what was tried, what broke and why, including approaches that were reverted. Issues and PRs are welcome
+either way.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
