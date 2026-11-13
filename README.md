@@ -4,6 +4,8 @@ A terminal that typesets LaTeX. Any `$...$` that shows up on screen is rendered 
 vector text, the same way Obsidian or a browser shows it. That includes `cat` output, Claude Code's
 replies, and the file you're editing in nvim. No plugins, and no cooperation from the program.
 
+https://github.com/user-attachments/assets/fc305b93-685c-445c-b600-f4ab60ab0228
+
 ![Claude Code explaining the Riemann hypothesis in mathterm: inline and display math typeset in its replies](docs/claude-code.png)
 
 ## How it works
