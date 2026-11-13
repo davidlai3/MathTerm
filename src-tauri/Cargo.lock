@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "mathterm"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "block2",
  "objc2",

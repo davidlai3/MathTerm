@@ -118,11 +118,30 @@ function katexHtml(tex, display) {
 //   `O\!\left(`) is never a factorial in practice, so put the backslash back.
 // - `\\` -> `\` inside matrix-like environments: a lone `\` before whitespace there is a row break, not a
 //   control space, so restore `\\` (otherwise every row of a matrix lands on one line).
-// The others (`\,` `\{` outside environments) can't be told apart from real text.
+// - `\underbrace{a}_{b}` -> `\underbrace{a}{b}`: Claude Code reads `}_{ ... }_` pairs as _italic_ and drops
+//   both underscores. `\underbrace` takes one argument, so a group right after it is its label.
+// - `\,` -> `,` next to `\times` / `\cdot` (`\text{mass}\,\times\,\text{acceleration}`): a literal comma
+//   beside a binary operator isn't real math.
+// The others (`\,` elsewhere, `\{` outside environments) can't be told apart from real text.
 const ROWS_ENV = /\\begin\{((?:[pbBvV]?|small)matrix|cases|aligned|alignedat|align\*?|array|gathered|gather\*?|split|eqnarray\*?)\}([\s\S]*?)\\end\{\1\}/g;
-const unstrip = (tex) => tex
+function underbraceLabels(tex) {
+  const at = [];
+  for (const m of tex.matchAll(/\\underbrace\s*\{/g)) {
+    let i = m.index + m[0].length, depth = 1;
+    for (; i < tex.length && depth; i++) {
+      if (tex[i] === '\\') i++;
+      else if (tex[i] === '{') depth++;
+      else if (tex[i] === '}') depth--;
+    }
+    if (!depth && tex[i] === '{') at.push(i);
+  }
+  for (const i of at.reverse()) tex = `${tex.slice(0, i)}_${tex.slice(i)}`;
+  return tex;
+}
+const unstrip = (tex) => underbraceLabels(tex
   .replace(/(\\[a-zA-Z]+|\bO)!/g, '$1\\!')
-  .replace(ROWS_ENV, (m, env, body) => m.replace(body, () => body.replace(/(?<!\\)\\(?=\s|$)/g, '\\\\')));
+  .replace(/(?<!\\),(?=\\(?:times|cdot)(?![a-zA-Z]))|(?<=\\(?:times|cdot)),/g, '\\,')
+  .replace(ROWS_ENV, (m, env, body) => m.replace(body, () => body.replace(/(?<!\\)\\(?=\s|$)/g, '\\\\'))));
 
 // Side-by-side panes: tmux and editor vertical splits draw a column of `│` down (nearly) the whole screen.
 // Each pane is scanned as its own column range, so a row holding two panes' text still matches `$$` rows,
@@ -193,7 +212,9 @@ function findIn(xa, xb, cursorRow) {
   for (let y = Math.max(0, b.viewportY - FENCE_LOOKBACK); y < b.viewportY; y++) {
     if (FENCE.test(b.getLine(y)?.translateToString(true, xa, xb) ?? '')) fence0 = !fence0;
   }
-  const blockBody = (y, end, start) => rows.slice(y + 1, end).map((r) => r.text.slice(start)).join(' ').trim();
+  // Soft-wrapped continuation rows join without a space (a wrap can split a command: `\und` / `erbrace`).
+  const blockBody = (y, end, start) => rows.slice(y + 1, end)
+    .map((r, i) => (i && wrapped(y + 1 + i) ? '' : ' ') + r.text.slice(start)).join('').trim();
   // Multi-row $$ ... $$ / \[ ... \] blocks as openRow -> { end, start }. `$$` opens and closes alike, so when
   // a block's opening row has scrolled off (always possible on the alt screen), its closing `$$` at the top
   // would pair with the next block's opener and shift every pair below by one. So pair both ways (first
@@ -346,9 +367,19 @@ function joinRows(found) {
   const one = (f) => f.rows === 1 && !f.wrapped;
   for (const f of found) if (one(f)) byRow.set(`${f.xa}:${f.y}`, [...(byRow.get(`${f.xa}:${f.y}`) || []), f]);
   const out = found.filter((f) => !one(f));
-  for (const ms of byRow.values()) {
+  const groups = [];
+  for (const row of byRow.values()) {
+    row.sort((p, q) => p.x0 - q.x0);
+    const line = b.getLine(b.viewportY + row[0].y);
+    // Never shift text across a `│` (box-drawn table cells, as Claude Code draws them): each cell is its own group.
+    for (const m of row) {
+      const g = groups[groups.length - 1], prev = g?.[g.length - 1];
+      if (prev?.y === m.y && prev.xa === m.xa && !line.translateToString(true, prev.x1, m.x0).includes('│')) g.push(m);
+      else groups.push([m]);
+    }
+  }
+  for (const ms of groups) {
     const y = ms[0].y;
-    ms.sort((p, q) => p.x0 - q.x0);
     const line = b.getLine(b.viewportY + y);
     const last = ms[ms.length - 1];
     // End at the row's last text, or before an editor's vertical split.

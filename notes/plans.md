@@ -56,7 +56,8 @@ The mode exists (see [auto-detect.md](auto-detect.md)). Still to do:
   renderer treats `\,` `\!` `\;` `\{` `\}` `\\` as escapes, so `\sin\!\left(` arrives as `\sin!\left(`, and
   `\frac12 s(s-1)\,\pi^{-s/2}` arrives as `...(s-1),\pi...` (rendered as a literal "!" and ","). This answers the
   open question about Claude Code: text-mode `$..$` and `$$..$$` survive, but punctuation escapes don't.
-  `\cmd!` is now restored to `\cmd\!`. `\,` `\{` `\\` are left alone (`,\alpha` and `{x}` are often meant
+  `\cmd!` is now restored to `\cmd\!`. `\underbrace{a}{b}` (its `_` eaten as `_italic_`) gets its `_` back, and `,` beside
+  `\times`/`\cdot` becomes `\,`. `\,` `\{` `\\` are left alone (`,\alpha` and `{x}` are often meant
   literally). Worth asking whether Claude Code can be told not to unescape inside math.
 - **Gaps after inline math: fixed by joined rows** (see [changelog.md](changelog.md)). Left: on a soft-wrapped line the shifted
   row ends early but the next row isn't pulled up, so a word the terminal split (`f` / `or`) stays split

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-12: math in Claude Code's box-drawn tables
+- A table row with two math spans (`│ $\mathbf{f}$ │ ... $\rho\mathbf{g}$ │`, user screenshot) was joined
+  into one overlay, so the `│` between the cells was redrawn shifted left. `joinRows` now never joins
+  matches across a `│`. Verified by screenshot (box table row, plain row with two matches still joined).
+- Same screenshot: `\underbrace{..}_{\text{..}}` labels rendered inline beside empty braces. Claude Code read the
+  `}_{ .. }_` pairs as `_italic_` and dropped every `_`, and `\,` became `,`. `unstrip` now puts `_` back
+  before a group right after `\underbrace{..}`, and `\,` for a comma beside `\times` / `\cdot`.
+- A `$$` block whose rows soft-wrapped was joined with spaces (`\und erbrace`), failed to parse and stayed raw.
+  Wrapped continuation rows now join with no space.
+- Verified: unit check of `unstrip`, screenshot of the user's exact text (wrapped at 900px wide).
+
 ## 2026-11-12: tmux / editor vertical splits
 - With a tmux split, `$$` blocks went raw (user screenshot): their rows also held the border and the other
   pane, so no row was "only `$$`". And the other pane's visible cursor (a shell prompt on row 0) marked
