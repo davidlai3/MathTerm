@@ -12,4 +12,5 @@ tauri = { version = "2", features = [] }
 portable-pty = "0.9"
 objc2 = "0.6"
 block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSUserDefaults", "NSDictionary", "NSValue", "NSString"] }
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSWindow", "NSResponder", "block2"] }

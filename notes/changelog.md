@@ -1,5 +1,17 @@
 # Changelog
 
+New entries go above the latest release marker; everything below a marker shipped in that release.
+
+## 2026-11-13: key repeat
+- Holding a letter opened macOS's accent picker instead of repeating (WebKit press-and-hold). `main.rs`
+  registers `ApplePressAndHoldEnabled = NO` in the app's registration domain before the app starts
+  (in-memory only; a `defaults write dev.mathterm ...` still wins).
+
+---
+**v0.1.0 released 2026-11-13** (commit `8cc9731`): everything below.
+
+---
+
 ## 2026-11-12: math in Claude Code's box-drawn tables
 - A table row with two math spans (`│ $\mathbf{f}$ │ ... $\rho\mathbf{g}$ │`, user screenshot) was joined
   into one overlay, so the `│` between the cells was redrawn shifted left. `joinRows` now never joins

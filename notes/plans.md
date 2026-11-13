@@ -4,12 +4,6 @@ Roughly in priority order:
 
 ## Terminal basics
 
-- **Key repeat (user request).** Holding a key should repeat it, as in any terminal. Likely cause: macOS
-  press-and-hold. In a WebKit view, holding a letter opens the accent picker instead of repeating. Fix to try:
-  turn it off for the app only, by registering `ApplePressAndHoldEnabled = NO` in the app's defaults at
-  startup (`main.rs`, before the window opens; `defaults write dev.mathterm ApplePressAndHoldEnabled -bool
-  false` to test by hand). Check that non-letter keys (arrows, backspace) already repeat and that accented
-  input via Option still works.
 - **tmux split windows: fixed for side-by-side panes** (see [changelog.md](changelog.md)). Left: vertical
   borders inside one half of a top/bottom split, fences/blocks across a horizontal split (rows above and
   below a `─` border are still one column range), and `mdv`'s OSC 7777 through tmux (needs

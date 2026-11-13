@@ -130,6 +130,18 @@ fn fn_f_fullscreen() {
     std::mem::forget(monitor); // installed for the app's lifetime
 }
 
+/// Holding a letter should repeat it, not open the accent picker. App-only (registration domain, not
+/// persisted), so `defaults write dev.mathterm ApplePressAndHoldEnabled -bool true` still overrides it.
+/// Must run before AppKit/WebKit read the default, i.e. before the app starts.
+#[cfg(target_os = "macos")]
+fn no_press_and_hold() {
+    use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
+    let key = NSString::from_str("ApplePressAndHoldEnabled");
+    let no = NSNumber::new_bool(false);
+    let d = NSDictionary::from_slices(&[&*key], &[no.as_ref()]);
+    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&d) };
+}
+
 /// Cmd-N: another window with its own shell, cascaded down-right from the one it was opened from.
 #[tauri::command]
 fn new_window(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
@@ -233,6 +245,8 @@ fn shot_after_delay(app: &mut tauri::App, path: String) {
 }
 
 fn main() {
+    #[cfg(target_os = "macos")]
+    no_press_and_hold();
     tauri::Builder::default()
         .setup(|app| {
             #[cfg(target_os = "macos")]

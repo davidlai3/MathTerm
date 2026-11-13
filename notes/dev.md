@@ -40,3 +40,8 @@ bin/mdv --test     # mdv self-check
 - The app is ad-hoc signed (`signingIdentity: "-"`), not notarized, so users have to right-click → Open
   the first time (README says so). Notarizing needs an Apple Developer ID; Tauri picks it up from the
   `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` (or API key) env vars, which would go in repo secrets.
+- The runner is `macos-latest`. A pinned image (`macos-14`) failed with "The configuration
+  'macos-14-arm64-us-default' is not supported" once GitHub retired it.
+- A tag-triggered run uses the workflow file *as of the tagged commit*, so a workflow fix needs a new tag
+  (or the tag moved). Moving a tag is fine only while no release was published from it.
+- After a release, add a `vX.Y.Z released <date>` marker at the top of `notes/changelog.md`.
