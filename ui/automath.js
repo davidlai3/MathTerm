@@ -85,6 +85,22 @@ function cellColor(cell, wantFg) {
   return (fg ? cell.isFgRGB() : cell.isBgRGB()) ? `#${v.toString(16).padStart(6, '0')}` : palette(v);
 }
 
+// Redrawn text (joined and reflowed rows): runs of cells with the same colors and attributes.
+const cellStyle = (c) => ({ fg: cellColor(c, true), bg: cellColor(c, false), b: !!c.isBold(), i: !!c.isItalic(),
+  u: !!c.isUnderline(), d: !!c.isDim() });
+function pushRun(runs, st, s) {
+  const prev = runs[runs.length - 1];
+  if (prev && ['fg', 'bg', 'b', 'i', 'u', 'd'].every((k) => prev[k] === st[k])) prev.s += s;
+  else runs.push({ ...st, s });
+}
+function runSpan(r) {
+  const sp = document.createElement('span');
+  sp.textContent = r.s;
+  Object.assign(sp.style, { color: r.fg, background: r.bg, fontWeight: r.b ? 'bold' : '',
+    fontStyle: r.i ? 'italic' : '', textDecoration: r.u ? 'underline' : '', opacity: r.d ? 0.5 : '' });
+  return sp;
+}
+
 // A row (columns xa..xb) as a string, plus the cell column where each UTF-16 unit starts and its cell's width.
 function rowCells(line, xa = 0, xb = term.cols) {
   let text = '';
@@ -311,6 +327,7 @@ function findIn(xa, xb, cursorRow) {
       gText += rows[k].text;
       for (let i = 0; i < rows[k].col.length; i++) { gCol.push(rows[k].col[i]); gWid.push(rows[k].wid[i]); gRow.push(k); }
     }
+    const ms = [];
     for (const m of gText.matchAll(INLINE_RX)) {
       const tex = unstrip((m[1] ?? m[2] ?? m[3] ?? m[4]).trim());
       const display = m[1] !== undefined || m[4] !== undefined;
@@ -318,18 +335,52 @@ function findIn(xa, xb, cursorRow) {
       const r0 = gRow[i0], r1 = gRow[i1 - 1];
       if (cursorRow >= r0 && cursorRow <= r1) continue; // editing this line: show the source
       if ((gText.slice(0, i0).match(/`/g) || []).length % 2) continue; // inside `inline code`
+      const x0 = gCol[i0], x1 = gCol[i1 - 1] + gWid[i1 - 1];
+      if (r0 === r1 ? isRaw(r0, x0, x1) : isRaw(r0, x0, xb) || isRaw(r1, xa, x1)) continue;
       const c = b.getLine(b.viewportY + gRow[i0 + (display ? 2 : 1)])?.getCell(gCol[i0 + (display ? 2 : 1)]);
-      if (r0 === r1) {
-        const x0 = gCol[i0], x1 = gCol[i1 - 1] + gWid[i1 - 1];
-        if (!isRaw(r0, x0, x1)) found.push({ y: r0, rows: 1, x0, x1, tex, display, c });
-      } else if (!gText.slice(0, i0).trim() && !gText.slice(i1).trim()) {
-        // wrapped across rows: only when nothing else shares those rows, so covering them full-width is safe
-        found.push({ y: r0, rows: r1 - r0 + 1, x0: xa, x1: xb, pad: gCol[i0] - xa, wrapped: true, tex, display, c });
+      ms.push({ i0, i1, r0, r1, x0, x1, tex, display, c });
+    }
+    const alone = ms.length === 1 && !gText.slice(0, ms[0].i0).trim() && !gText.slice(ms[0].i1).trim();
+    if (yEnd > y && ms.length && !alone) {
+      // A wrapped line with math and text: typeset as one flow over all its rows (see makeReflow), so math
+      // straddling the edge renders and the text after it re-wraps. Editing it shows the whole line's source.
+      if (cursorRow < y || cursorRow > yEnd) found.push(reflow(y, yEnd, gText, gRow, gCol, ms));
+    } else {
+      for (const m of ms) {
+        if (m.r0 === m.r1) found.push({ y: m.r0, rows: 1, x0: m.x0, x1: m.x1, tex: m.tex, display: m.display, c: m.c });
+        // wrapped across rows alone: nothing else shares those rows, so covering them full-width is safe
+        else found.push({ y: m.r0, rows: m.r1 - m.r0 + 1, x0: xa, x1: xb, pad: m.x0 - xa, wrapped: true,
+          tex: m.tex, display: m.display, c: m.c });
       }
     }
     y = yEnd;
   }
   return found;
+
+  // The reflow item for logical line rows y..yEnd: its text (as styled runs) and math, in order.
+  function reflow(y, yEnd, gText, gRow, gCol, ms) {
+    const segs = [];
+    const text = (a, z) => {
+      const runs = [];
+      for (let i = a; i < z; i++) {
+        const c = b.getLine(b.viewportY + gRow[i])?.getCell(gCol[i]);
+        if (c) pushRun(runs, cellStyle(c), gText[i]);
+      }
+      if (runs.length) segs.push({ runs });
+    };
+    let at = 0;
+    for (const m of ms) {
+      text(at, m.i0);
+      segs.push({ tex: m.tex, display: m.display, src: gText.slice(m.i0, m.i1),
+        fg: m.c ? cellColor(m.c, true) : term.options.theme.foreground });
+      at = m.i1;
+    }
+    text(at, gText.trimEnd().length);
+    const c0 = cell(y, 0);
+    const bg = c0 ? cellColor(c0, false) : term.options.theme.background;
+    return { reflow: true, y, rows: yEnd - y + 1, x0: xa, x1: xb, segs, bg,
+      key: JSON.stringify(['reflow', xb - xa, yEnd - y, bg, segs]) };
+  }
 }
 
 // Display math is centered on the window (as mdv's is) when its rows, grown ones included, hold nothing
@@ -397,12 +448,7 @@ function joinRows(found) {
       const runs = [];
       for (let x = a; x < z; x++) {
         const c = line.getCell(x);
-        if (!c || c.getWidth() === 0) continue;
-        const st = { fg: cellColor(c, true), bg: cellColor(c, false), b: !!c.isBold(), i: !!c.isItalic(),
-          u: !!c.isUnderline(), d: !!c.isDim(), s: '' };
-        const prev = runs[runs.length - 1];
-        if (prev && ['fg', 'bg', 'b', 'i', 'u', 'd'].every((k) => prev[k] === st[k])) prev.s += c.getChars() || ' ';
-        else runs.push({ ...st, s: c.getChars() || ' ' });
+        if (c && c.getWidth() !== 0) pushRun(runs, cellStyle(c), c.getChars() || ' ');
       }
       if (runs.length) parts.push({ runs, cols: z - a });
     };
@@ -431,7 +477,7 @@ function grow(found, cursor) {
     const editing = (y) => cursor && y === cursor.y && cursor.x >= f.xa && cursor.x < f.xb;
     const free = (y, x0, x1) => y >= 0 && y < term.rows && !editing(y) && !isTaken(y) &&
       (b.getLine(b.viewportY + y)?.translateToString(true, x0, x1) ?? '').trim() === '';
-    if (f.table) { f.top = f.y; f.span = f.rows; continue; } // tables keep exactly their rows
+    if (f.table || f.reflow) { f.top = f.y; f.span = f.rows; continue; } // these keep exactly their rows
     const last = f.y + f.rows - 1;
     const x0 = f.rows === 1 && !f.wrapped ? left.get(`${f.xa}:${f.y}`) : f.x0;
     let up = 0, down = 0;
@@ -463,13 +509,7 @@ function makeJoined(item, cw, ch) {
     if (p.runs) {
       inner.className = 'auto-text';
       Object.assign(inner.style, { font: `${term.options.fontSize}px ${term.options.fontFamily}`, lineHeight: `${ch}px` });
-      for (const r of p.runs) {
-        const sp = document.createElement('span');
-        sp.textContent = r.s;
-        Object.assign(sp.style, { color: r.fg, background: r.bg, fontWeight: r.b ? 'bold' : '',
-          fontStyle: r.i ? 'italic' : '', textDecoration: r.u ? 'underline' : '', opacity: r.d ? 0.5 : '' });
-        inner.appendChild(sp);
-      }
+      for (const r of p.runs) inner.appendChild(runSpan(r));
       x += p.cols * cw;
     } else {
       const html = katexHtml(p.tex, p.display);
@@ -481,6 +521,49 @@ function makeJoined(item, cw, ch) {
       x += Math.min(p.cols * cw, inner.getBoundingClientRect().width);
     }
   }
+  return el;
+}
+
+// A wrapped line with math (see findIn's reflow): text and math in one flow box over the line's rows, wrapped
+// by the browser at the line's width, one terminal row per line box. Math is fitted to a row. Returns null
+// (the line stays source) when the flow needs more rows than the source has.
+// ponytail: wraps at spaces like a browser, not mid-word like the terminal; a line of mostly unbreakable text
+// can need an extra row and fall back to source.
+let advanceCtx = null; // canvas context for the font's real advance width, so text keeps the cell grid
+function makeReflow(item, cw, ch) {
+  const font = `${term.options.fontSize}px ${term.options.fontFamily}`;
+  advanceCtx ??= document.createElement('canvas').getContext('2d');
+  advanceCtx.font = font;
+  const el = document.createElement('div');
+  el.className = 'auto-math';
+  const w = (item.x1 - item.x0) * cw, h = item.rows * ch;
+  Object.assign(el.style, { left: `${item.x0 * cw}px`, top: `${item.top * ch}px`, width: `${w}px`, height: `${h}px`,
+    background: item.bg });
+  const flow = document.createElement('div');
+  flow.className = 'auto-flow';
+  Object.assign(flow.style, { font, lineHeight: `${ch}px`, letterSpacing: `${cw - advanceCtx.measureText('M').width}px` });
+  const boxes = [];
+  for (const sg of item.segs) {
+    if (sg.runs) { for (const r of sg.runs) flow.appendChild(runSpan(r)); continue; }
+    const html = katexHtml(sg.tex, sg.display);
+    if (!html) { flow.appendChild(runSpan({ s: sg.src, fg: sg.fg })); continue; }
+    const box = document.createElement('span');
+    box.className = 'auto-inline';
+    box.style.height = `${ch}px`;
+    const inner = document.createElement('div');
+    inner.innerHTML = html;
+    inner.style.color = sg.fg;
+    box.appendChild(inner);
+    flow.appendChild(box);
+    boxes.push(inner);
+  }
+  el.appendChild(flow);
+  autoLayer.appendChild(el);
+  for (const inner of boxes) {
+    fitInk(inner, w, ch * INLINE_OVERFLOW);
+    inner.parentNode.style.width = `${inner.getBoundingClientRect().width}px`;
+  }
+  if (flow.getBoundingClientRect().height > h + 0.5) { el.remove(); return null; }
   return el;
 }
 
@@ -552,6 +635,7 @@ function makeTable(item, cw, ch) {
 function makeOverlay(item, cw, ch) {
   if (item.table) return makeTable(item, cw, ch);
   if (item.joined) return makeJoined(item, cw, ch);
+  if (item.reflow) return makeReflow(item, cw, ch);
   const html = katexHtml(item.tex, item.display);
   if (!html) return null;
   const el = document.createElement('div');

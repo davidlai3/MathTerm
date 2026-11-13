@@ -2,6 +2,29 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-13: inline math wrapped mid-sentence
+- A soft-wrapped line with math and text left any match straddling the edge raw. Now the whole logical line
+  is reflowed: one overlay over its rows, text runs and math in a `pre-wrap` flow at the line's width, the
+  browser re-wraps it (`reflow` in `findIn`, `makeReflow`). Also fixes words the terminal split at the edge
+  (`f` / `or`) staying split. Falls back to source if the flow needs more rows than the source.
+- Text runs shared with `joinRows` (`cellStyle`, `pushRun`, `runSpan`). Reflowed text gets `letter-spacing`
+  so the font's advance matches the cell width.
+- Verified: 4 new tests (the todo test now passes) and a screenshot at 520px wide (`$\frac{hc}{\lambda}$`
+  and `$\sum..$` straddling the edge, prose re-wrapped). Not covered: programs that wrap with real newlines
+  (Claude Code).
+
+## 2026-11-13: auto-detect test suite
+- `npm test`: `test/automath.test.js` (node:test, `@xterm/headless` dev dependency) runs automath.js against
+  a real xterm buffer. 34 tests on current behavior (delimiters, fences, cursor row, wide chars, raw
+  spans, joining, growing/centering, blocks, stray `$$` closers, soft wraps, tmux panes, tables, `unstrip`,
+  `splitCells`, `cellHtml`, ignore list) plus 6 `todo` tests for known bugs from plans.md.
+- Found while writing it: multi-row `$$` block tex keeps each row's trailing blanks (`a + b      ...  = c`).
+  Harmless to KaTeX, but it's in the cache key.
+
+---
+**v0.1.1 released 2026-11-13** (commit `ff90a77`): everything below.
+
+---
 ## 2026-11-13: key repeat
 - Holding a letter opened macOS's accent picker instead of repeating (WebKit press-and-hold). `main.rs`
   registers `ApplePressAndHoldEnabled = NO` in the app's registration domain before the app starts

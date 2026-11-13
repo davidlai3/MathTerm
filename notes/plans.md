@@ -53,9 +53,7 @@ The mode exists (see [auto-detect.md](auto-detect.md)). Still to do:
   `\cmd!` is now restored to `\cmd\!`. `\underbrace{a}{b}` (its `_` eaten as `_italic_`) gets its `_` back, and `,` beside
   `\times`/`\cdot` becomes `\,`. `\,` `\{` `\\` are left alone (`,\alpha` and `{x}` are often meant
   literally). Worth asking whether Claude Code can be told not to unescape inside math.
-- **Gaps after inline math: fixed by joined rows** (see [changelog.md](changelog.md)). Left: on a soft-wrapped line the shifted
-  row ends early but the next row isn't pulled up, so a word the terminal split (`f` / `or`) stays split
-  with a gap after it. Fixing that means reflowing the whole logical line.
+- **Gaps after inline math: fixed by joined rows, and by reflow on soft-wrapped lines** (see [changelog.md](changelog.md)).
 - **Claude Code, partly verified** (user screenshot): one-line `$$..$$` display math survives its markdown
   rendering with backslashes and `_` intact. Still unchecked: inline `$..$` and `\(..\)`. In that sample the
   model wrote inline math as Unicode (`Yₙ`) rather than LaTeX.
@@ -84,10 +82,9 @@ Auto-detect typesets math in the editor itself. For a fully styled page (heading
 1. **Markdown gaps.** Tables wider than the window wrap and break their borders (could shrink columns or
    wrap cell text). Escaped `\|` in table cells isn't handled. Bare URLs aren't clickable (xterm's web-links
    addon would do it). Nested blockquotes, numbered-list styling and footnotes print mostly raw.
-2. **Line wrap.** Auto-detect: inline math that wraps mid-sentence (straddles the window's or a pane's right
-   edge) stays raw; only a wrapped match alone on its rows is typeset. A reflow attempt (draw it at the end of
-   the first row or the start of the next, shift the rest) was reverted on 2026-11-12: it didn't quite work.
-   In `mdv`, such math is clipped; `mdv` could wrap the text itself.
+2. **Line wrap.** Auto-detect: fixed for soft wraps (reflow, see [changelog.md](changelog.md)). Not handled:
+   programs that wrap with real newlines (Claude Code's own wrapping), where `$x+` / `y$` never match.
+   Untested there. In `mdv`, such math is clipped; `mdv` could wrap the text itself.
 3. **Selection / copy.** Copying a math region yields spaces. Could put the LaTeX source on the clipboard.
 4. **`tex` one-liner** (`tex '\sqrt{2}'`) and a shell hook so normal command output can contain math.
 5. Later: tabs/splits (covered by the live-preview goal above).

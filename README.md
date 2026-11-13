@@ -118,10 +118,9 @@ math as source. With output redirected (`mdv f.md > out`) it prints the file unc
 
 Early prototype, macOS only. Known gaps:
 
-- Inline math that wraps onto the next row mid-sentence (it straddles the window's or a pane's right edge)
-  stays raw LaTeX. Display math alone on its rows is fine even when wrapped. Widening the window usually fixes it.
+- Inline math split across rows by a program that wraps its own output (rather than the terminal wrapping it)
+  stays raw LaTeX. Widening the window usually fixes it.
 - Tall inline math with text directly above and below is shrunk to fit its row.
-- On a soft-wrapped line, a word the terminal split at the edge stays split after the gap closes.
 - TUIs that draw code blocks without backticks (Claude Code does) can get `$var$`-like text typeset.
 - In `mdv`, tables wider than the window wrap and break their borders.
 

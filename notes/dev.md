@@ -9,6 +9,7 @@ npm run app        # release .app, installed to /Applications
 npm run shot       # launch, run `mdv demo.md`, screenshot just the window to shot.png, quit
 npm run shot:docs  # same at 900x1010, saved as docs/demo.png for the README
 bin/mdv --test     # mdv self-check
+npm test           # auto-detect tests (test/, headless xterm) + mdv self-check
 ```
 
 - Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed 1.5s after the shell starts), `MATHTERM_SHOT`
@@ -30,6 +31,12 @@ bin/mdv --test     # mdv self-check
 - App icon: `src-tauri/icons/icon.png` (1024px) and `icon.icns`, both written by `make_icon.py` (Pillow, KaTeX's
   own fonts) on the macOS grid (824px rounded square, transparent margin). Embedded at compile time, so
   restart `npm start` after changing it.
+
+- `test/automath.test.js` loads `ui/themes.js` + `ui/automath.js` into a `vm` context with a real
+  `@xterm/headless` terminal and stubs for renderer.js's DOM helpers, writes text and asserts on `findMath()`.
+  It tests detection and layout decisions, not pixels (use `npm run shot` for those). Known bugs are
+  `todo` tests: they're reported but don't fail; drop `todo` once fixed. Values from the vm are another
+  realm's arrays, so the harness JSON-clones them before `deepEqual`.
 
 ## Releasing
 

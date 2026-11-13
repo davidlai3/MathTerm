@@ -15,9 +15,12 @@ For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). 
   it stays centered on its text row. Grown math keeps `GROW_MARGIN` (0.25 row) clear top and bottom.
   A gap shared by two matches is split (upper gets floor(gap/2)). This is
   what makes Claude Code's one-line `$$..$$` (between blank lines) render near full size instead of 1 row.
-- **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. A match spanning rows
-  is accepted only if nothing else is on those rows (true for a long display line), and it then covers them
-  full-width, keeping the source indent.
+- **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. A match alone on its
+  rows (a long display line) covers them full-width, keeping the source indent. Any other wrapped line with
+  math is **reflowed** (`reflow` in `findIn`, `makeReflow`): one overlay over all its rows holds the text (as
+  styled runs) and the math in a `white-space: pre-wrap` flow at the line's width, so the browser re-wraps it
+  at spaces. `letter-spacing` corrects the font's advance (canvas `measureText`) to the cell width. Math is
+  fitted to one row. If the flow needs more rows than the source, the line stays source.
 - A match becomes an absolutely positioned overlay covering the source's cells (plus grown rows), using the source cell's
   foreground/background (default palette, 256-color cube or RGB, honoring inverse). Math is scaled to fit,
   with inline allowed `INLINE_OVERFLOW`.
