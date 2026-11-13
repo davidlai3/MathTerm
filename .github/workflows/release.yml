@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest # a pinned image (macos-14) fails once GitHub retires it
     steps:
       - uses: actions/checkout@v4
 
