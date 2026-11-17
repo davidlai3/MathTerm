@@ -2,6 +2,13 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-16: full screen opened find; right-click menu
+- Ctrl-Cmd-F (and Fn-F, user report) opened the find bar: the Cmd-F binding didn't exclude Ctrl. It does now,
+  and `fn_f_fullscreen`'s AppKit monitor also catches Ctrl-Cmd-F, toggling full screen before the web view sees it.
+- Right-click showed WebKit's context menu (Spelling, Font, AutoFill) for xterm's textarea: `contextmenu` is
+  now prevented. Mouse-reporting programs still get the click (tmux's own pane menu is tmux's).
+- Verified: `cargo check`, `npm test`. Keys and right-click not pressed in the app yet.
+
 ## 2026-11-16: OSC 52 clipboard writes
 - Copying from nvim in tmux over ssh never reached the local clipboard (user report): xterm.js has no OSC 52
   handler, so the sequence was dropped. `ui/clipboard.js` handles it, and the Rust `copy` command pipes the text to

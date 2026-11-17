@@ -106,18 +106,18 @@ fn resize(window: WebviewWindow, session: State<Session>, cols: u16, rows: u16) 
     }
 }
 
-/// Fn-F (Globe-F) toggles full screen. macOS would map it to the menu's Enter Full Screen, but the web view
-/// takes the key first and WebKit doesn't expose Fn to the page, so catch it in AppKit before the web view.
-/// (Ctrl-Cmd-F does reach the default menu's View > Enter Full Screen.)
+/// Fn-F (Globe-F) and Ctrl-Cmd-F toggle full screen. macOS would map them to the menu's Enter Full Screen, but
+/// the web view takes the key first (WebKit doesn't expose Fn to the page, and the page saw Ctrl-Cmd-F as
+/// Cmd-F: find), so catch them in AppKit before the web view.
 #[cfg(target_os = "macos")]
 fn fn_f_fullscreen() {
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags as M};
     let handler = block2::RcBlock::new(|ev: std::ptr::NonNull<NSEvent>| -> *mut NSEvent {
         let e = unsafe { ev.as_ref() };
         let flags = e.modifierFlags();
-        let fn_f = flags.contains(M::Function)
-            && !flags.intersects(M::Command | M::Control | M::Option | M::Shift)
-            && e.charactersIgnoringModifiers().is_some_and(|s| s.to_string() == "f");
+        let mods = flags & (M::Command | M::Control | M::Option | M::Shift);
+        let fn_f = ((mods.is_empty() && flags.contains(M::Function)) || mods == M::Command | M::Control)
+            && e.charactersIgnoringModifiers().is_some_and(|s| s.to_string().eq_ignore_ascii_case("f"));
         if let (true, Some(mtm)) = (fn_f, objc2::MainThreadMarker::new()) {
             if let Some(w) = e.window(mtm) {
                 w.toggleFullScreen(None);

@@ -36,6 +36,9 @@ function useWebgl() {
 }
 // Type right away: on launch, and when switching back to the window (Cmd-Tab), without clicking in first.
 term.focus();
+// No WebKit context menu (Spelling, Font, AutoFill... for xterm's hidden textarea). Programs with mouse
+// reporting (tmux) still get the right click.
+document.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('focus', () => (findBox.hidden ? term : findInput).focus());
 
 // Cmd-F: find in scrollback. Enter / Shift-Enter step through matches, Esc closes.
@@ -136,7 +139,7 @@ const keyBindings = [
   (e) => e.metaKey && (e.key === '=' || e.key === '+') && (setFontSize(term.options.fontSize + 1), true),
   (e) => e.metaKey && e.key === '-' && (setFontSize(term.options.fontSize - 1), true),
   (e) => e.metaKey && !e.shiftKey && e.key === 'n' && (invoke('new_window'), true),
-  (e) => e.metaKey && !e.shiftKey && e.key === 'f' && (openFind(), true),
+  (e) => e.metaKey && !e.shiftKey && !e.ctrlKey && e.key === 'f' && (openFind(), true), // Ctrl-Cmd-F: full screen
   (e) => e.metaKey && e.key === '0' && (setFontSize(baseFontSize), true),
   (e) => devMode && e.metaKey && e.shiftKey && e.key.toLowerCase() === 'd' && (saveCapture(), true),
 ];
