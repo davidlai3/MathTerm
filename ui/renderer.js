@@ -21,6 +21,19 @@ const statusBar = document.getElementById('status');
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(document.getElementById('term'));
+// GPU renderer: the default DOM renderer rebuilds every row as spans on each scroll step, on the same thread
+// as the math overlays. If the WebGL context is lost (or never created), xterm falls back to the DOM renderer.
+// Loaded from applyConfig: `"renderer": "dom"` keeps the DOM renderer (a stale-rows bug in nvim is suspected
+// to be WebGL's, not yet reproduced).
+function useWebgl() {
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch (e) {
+    console.warn('WebGL renderer unavailable, using DOM renderer', e);
+  }
+}
 // Type right away: on launch, and when switching back to the window (Cmd-Tab), without clicking in first.
 term.focus();
 window.addEventListener('focus', () => (findBox.hidden ? term : findInput).focus());
@@ -97,7 +110,7 @@ function setFontSize(px) {
 }
 
 // ~/.config/mathterm/config.json: { "theme": "catppuccin-mocha" | {..ITheme..}, "fontSize": 14, "fontFamily": "...",
-//   "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", ...], "autoDetectTables": true }
+//   "lineHeight": 1.2, "autoDetectIgnore": ["*.tex", ...], "autoDetectTables": true, "renderer": "webgl" | "dom" }
 let config = {}; // the parsed config.json, for other modules (automath.js reads autoDetectIgnore)
 function applyConfig(text) {
   let cfg = {};
@@ -111,6 +124,7 @@ function applyConfig(text) {
     flash(`config.json: unknown theme "${cfg.theme}" (built-in: ${Object.keys(THEMES).join(', ')})`, 5000);
   }
   applyTheme(typeof cfg.theme === 'string' ? THEMES[cfg.theme] : cfg.theme);
+  if (cfg.renderer !== 'dom') useWebgl();
   if (cfg.fontFamily) term.options.fontFamily = cfg.fontFamily;
   if (cfg.lineHeight) term.options.lineHeight = cfg.lineHeight;
   baseFontSize = cfg.fontSize || baseFontSize;
@@ -124,16 +138,42 @@ const keyBindings = [
   (e) => e.metaKey && !e.shiftKey && e.key === 'n' && (invoke('new_window'), true),
   (e) => e.metaKey && !e.shiftKey && e.key === 'f' && (openFind(), true),
   (e) => e.metaKey && e.key === '0' && (setFontSize(baseFontSize), true),
+  (e) => devMode && e.metaKey && e.shiftKey && e.key.toLowerCase() === 'd' && (saveCapture(), true),
 ];
+
+// Debug capture (Cmd-Shift-D, dev builds only: `npm start`): every chunk of pty output since the window opened, with the size it arrived at,
+// plus what the screen holds now, saved as JSON lines to ~/mathterm-debug-<time>.jsonl. Replaying it into
+// @xterm/headless shows whether a wrong screen comes from the bytes (emulation) or from drawing.
+// ponytail: recording stops at CAPTURE_MAX; open a new window to capture a long session's later part.
+const CAPTURE_MAX = 32e6;
+let devMode = false; // set from Rust's `dev` before the shell starts; release builds record nothing
+const capture = [];
+let captureLen = 0;
+function record(d) {
+  if (!devMode || captureLen > CAPTURE_MAX) return;
+  captureLen += d.length;
+  capture.push(JSON.stringify({ d, cols: term.cols, rows: term.rows }));
+}
+async function saveCapture() {
+  const b = term.buffer.active;
+  const screen = Array.from({ length: term.rows }, (_, y) => b.getLine(b.viewportY + y)?.translateToString(true) ?? '');
+  const head = JSON.stringify({ cols: term.cols, rows: term.rows, alt: b.type === 'alternate', truncated: captureLen > CAPTURE_MAX, screen });
+  try {
+    flash(`saved ${await invoke('save_debug', { text: [head, ...capture].join('\n') })}`, 4000);
+  } catch (e) {
+    flash(`debug capture: ${e}`, 4000);
+  }
+}
 term.attachCustomKeyEventHandler((e) => !(e.type === 'keydown' && keyBindings.some((k) => k(e))));
 
 term.onData(pty.write);
 // Load the config (theme, font size) and attach the listener before starting the shell, so the shell starts
 // at the final size and the first prompt isn't lost.
 Promise.all([
+  invoke('dev').then((d) => { devMode = d; }, () => {}),
   invoke('config').then(applyConfig, () => applyConfig('')),
   // this window's shell only (a global `listen` would also get other windows' output)
-  window.__TAURI__.webviewWindow.getCurrentWebviewWindow().listen('pty', (e) => term.write(e.payload)),
+  window.__TAURI__.webviewWindow.getCurrentWebviewWindow().listen('pty', (e) => { record(e.payload); term.write(e.payload); }),
 ]).then(() => invoke('start', { cols: term.cols, rows: term.rows }));
 
 // Hidden element used to measure rendered KaTeX in pixels.
@@ -278,6 +318,8 @@ term.onResize(relayout);
 //   draw:   OSC 7777 ; <cols> ; <rows> ; <i|d> ; <latex> BEL   (inline rows > 1 = tall, see TALL_SCALE)
 //   rule:   OSC 7777 ; rule ; <h1|hr> BEL                     (full-width line on the current row)
 //   raw:    OSC 7777 ; raw ; <len> BEL                        (next len cells are literal: no auto-detect)
+initOsc52(term, (text) => invoke('copy', { text }).catch((e) => flash(`clipboard: ${e}`, 4000)));
+
 term.parser.registerOscHandler(7777, (payload) => {
   let m = /^\?;([id]);([\s\S]*)$/.exec(payload);
   if (m) {

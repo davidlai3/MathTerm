@@ -2,6 +2,46 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-16: OSC 52 clipboard writes
+- Copying from nvim in tmux over ssh never reached the local clipboard (user report): xterm.js has no OSC 52
+  handler, so the sequence was dropped. `ui/clipboard.js` handles it, and the Rust `copy` command pipes the text to
+  `pbcopy` with `LANG` set (without it, a GUI app's pbcopy mangles non-ASCII: `é∫` became `√©‚à´`). Every selection
+  (empty, `c`, `p`, `s`) goes to the clipboard, since macOS has no primary selection. Reads (`?`) are ignored, and
+  invalid base64 / UTF-8 is dropped. xterm's OSC parser already takes BEL and ST and payloads up to 10 MB.
+- Verified: `test/clipboard.test.js` (headless xterm: c / empty / p / cp, BEL and ST, 100 KB, invalid input, `?`),
+  `cargo check`, pbcopy with and without `LANG`. Not run in the app or through tmux yet.
+
+## 2026-11-14: debug capture
+- Dev builds only (`cfg!(debug_assertions)`, via a Rust `dev` command): Cmd-Shift-D saves the window's pty output and current screen to `~/mathterm-debug-<time>.jsonl`;
+  `test/replay.js` replays it into headless xterm and diffs (see dev.md). Rust `save_debug` writes the file.
+  For the nvim stale-rows bug (plans.md), which doesn't reproduce here. Verified: captured nvim scrolling a
+  vertical + horizontal split in the app, replay matched the app's screen. The user's capture then showed
+  that bug comes from tmux's own pane grid, not mathterm (plans.md).
+
+## 2026-11-14: smoother scrolling (WebGL renderer, transform-placed overlays)
+- Scrolling a chat with lots of math was choppy (user report). Measured first: auto-detect's scan is
+  ~0.4-0.8 ms per frame (headless, 120x40-200x60), so the cost is in drawing.
+- xterm now uses `@xterm/addon-webgl` instead of its DOM renderer, which rebuilt every row as spans on each
+  scroll step, on the main thread with the overlays. On WebGL context loss it disposes and xterm falls back
+  to the DOM renderer.
+- Auto-detect overlays are placed with `transform: translate()` (`moveTo`) instead of `left`/`top`, so moving
+  reused overlays while scrolling needs no layout. Unmoved overlays aren't touched.
+- Redrawn text in joined rows now gets the same `letter-spacing` correction as reflowed lines (`textStyle`):
+  WebGL rounds the cell width to device pixels, so the font's advance can drift off the grid.
+- `"renderer": "dom"` in config.json keeps the DOM renderer. User report (nvim, mouse-wheel scrolling):
+  rows sometimes drawn stale, the same line repeated down the window; selecting them redraws them right and
+  copying gives the right text, so the buffer is fine and it's a drawing bug. First seen with this build,
+  so WebGL is suspected but not proven. Not reproduced: nvim against headless xterm (buffer always matches a
+  `:redraw!`, `--clean` and the user's config), and in the app with timed and synthetic-wheel scrolling.
+- Verified: `npm test`; screenshots of `mdv demo.md` (matches docs/demo.png) and auto-detect output scrolled
+  after drawing (reused overlays land on their rows); a probe confirmed the WebGL canvas is active.
+  Not measured in-app: the actual frame time while scrolling.
+
+---
+**v0.1.2 released 2026-11-13** (commit `cb369e0`): everything below.
+
+---
+
 ## 2026-11-13: inline math wrapped mid-sentence
 - A soft-wrapped line with math and text left any match straddling the edge raw. Now the whole logical line
   is reflowed: one overlay over its rows, text runs and math in a `pre-wrap` flow at the line's width, the

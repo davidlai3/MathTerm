@@ -11,6 +11,13 @@ Roughly in priority order:
 
 ## Performance
 
+- **Not ours: stale rows in nvim while mouse-wheel scrolling** (user report), the same line repeated down the
+  window. A Cmd-Shift-D capture showed nvim was inside tmux, and replaying it reproduces the screen exactly:
+  tmux itself redraws the pane with the repeated rows (`⎋[H   50⎋[112X` four times), so they were in tmux's
+  own grid before mathterm saw them. Likely cause: `default-terminal "xterm-256color"` in the user's
+  tmux.conf (tmux's FAQ: inside tmux, TERM must be `tmux`/`screen`-based). Suggested `tmux-256color`; not
+  confirmed, since a detached tmux with the same configs didn't reproduce it with scripted scrolling.
+
 - **User report: scrolling a Claude Code chat with LaTeX is noticeably slower** than without it. Not measured
   yet. First step: time `scan()` and `makeOverlay` (`performance.now()`, behind a debug flag, shown in the
   status bar), and count overlays built vs moved per frame, while scrolling a long chat.
@@ -32,8 +39,7 @@ Roughly in priority order:
      `start`/`end`).
   4. *Fixed costs per scan:* the 200-row fence lookback (`translateToString` per row, normal buffer only),
      `pairBlocks` run twice, and `grow`/`centerDisplay` reading neighbor rows. Small each, but paid on every frame.
-  5. *Moving overlays.* Reused overlays move via `left`/`top`, which triggers layout. `transform:
-     translate()` would keep it to compositing.
+  5. ~~*Moving overlays.*~~ Done: placed with `transform` (2026-11-14). xterm itself now renders with WebGL.
   6. *DOM weight.* Each overlay is a full KaTeX tree. A long chat with many equations on screen means
      thousands of nodes repositioned per scroll step.
 - Budget: a scan should stay well under a frame (~2-3 ms) on a full-screen window, so a scroll frame

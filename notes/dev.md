@@ -37,6 +37,11 @@ npm test           # auto-detect tests (test/, headless xterm) + mdv self-check
   It tests detection and layout decisions, not pixels (use `npm run shot` for those). Known bugs are
   `todo` tests: they're reported but don't fail; drop `todo` once fixed. Values from the vm are another
   realm's arrays, so the harness JSON-clones them before `deepEqual`.
+- Debug capture (dev builds only, `npm start`; `npm run app` has none): Cmd-Shift-D saves every chunk of pty output since the window opened (with the size it
+  arrived at) plus the current screen to `~/mathterm-debug-<time>.jsonl`. `node test/replay.js <file>` replays
+  it into `@xterm/headless` and diffs against the saved screen: same screen means the bytes produce it
+  (emulation or the program), different means the app's xterm went somewhere the bytes don't lead (drawing,
+  lost bytes). Stops recording after 32 MB. The file holds everything printed in that window.
 
 ## Releasing
 

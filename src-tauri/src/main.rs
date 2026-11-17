@@ -200,6 +200,42 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// OSC 52 clipboard write (ui/clipboard.js) via pbcopy. LANG is set because a GUI app has none, and pbcopy
+/// then mangles non-ASCII. Off the main thread, like open_url.
+#[tauri::command]
+fn copy(text: String) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("pbcopy").env("LANG", "en_US.UTF-8").stdin(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        let _ = stdin.write_all(text.as_bytes());
+        drop(stdin);
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+/// Debug build (`tauri dev`)? Gates dev-only frontend features like the debug capture.
+#[tauri::command]
+fn dev() -> bool {
+    cfg!(debug_assertions)
+}
+
+/// Debug capture from the frontend (Cmd-Shift-D) to ~/mathterm-debug-<unix time>.jsonl. Returns the path.
+/// Dev builds only.
+#[tauri::command]
+fn save_debug(text: String) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("debug capture is only in dev builds".into());
+    }
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    let path = format!("{home}/mathterm-debug-{secs}.jsonl");
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// dev hook: screenshot just this window to $MATHTERM_SHOT after a few seconds, then quit.
 /// The window is parked off-screen and the app never activates, so it doesn't interrupt whoever is using
 /// the machine. That works because background throttling is disabled (tauri.conf.json): WebKit keeps
@@ -265,7 +301,7 @@ fn main() {
                 window.state::<Foreground>().0.lock().unwrap().remove(window.label());
             }
         })
-        .invoke_handler(tauri::generate_handler![start, write, resize, open_url, config, foreground, new_window])
+        .invoke_handler(tauri::generate_handler![start, write, resize, open_url, config, foreground, new_window, dev, save_debug, copy])
         .run(tauri::generate_context!())
         .expect("error while running mathterm");
 }

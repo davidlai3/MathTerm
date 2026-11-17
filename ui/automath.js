@@ -101,6 +101,18 @@ function runSpan(r) {
   return sp;
 }
 
+// Font for redrawn text, with letter-spacing that corrects the font's advance to the cell width (the WebGL
+// renderer rounds cells to device pixels), so text stays on the grid across a whole row.
+let advanceCtx = null;
+function textStyle(cw) {
+  const font = `${term.options.fontSize}px ${term.options.fontFamily}`;
+  advanceCtx ??= document.createElement('canvas').getContext('2d');
+  advanceCtx.font = font;
+  return { font, letterSpacing: `${cw - advanceCtx.measureText('M').width}px` };
+}
+// Overlays are placed with transform, not left/top: moving one while scrolling then needs no layout.
+const moveTo = (el, x, y) => { el.style.transform = `translate(${x}px, ${y}px)`; };
+
 // A row (columns xa..xb) as a string, plus the cell column where each UTF-16 unit starts and its cell's width.
 function rowCells(line, xa = 0, xb = term.cols) {
   let text = '';
@@ -496,10 +508,8 @@ function grow(found, cursor) {
 function makeJoined(item, cw, ch) {
   const el = document.createElement('div');
   el.className = 'auto-math';
-  Object.assign(el.style, {
-    left: `${item.x0 * cw}px`, top: `${item.top * ch}px`, width: `${(item.x1 - item.x0) * cw}px`,
-    height: `${ch}px`, background: item.bg,
-  });
+  moveTo(el, item.x0 * cw, item.top * ch);
+  Object.assign(el.style, { width: `${(item.x1 - item.x0) * cw}px`, height: `${ch}px`, background: item.bg });
   autoLayer.appendChild(el);
   let x = 0;
   for (const p of item.parts) {
@@ -508,7 +518,7 @@ function makeJoined(item, cw, ch) {
     el.appendChild(inner);
     if (p.runs) {
       inner.className = 'auto-text';
-      Object.assign(inner.style, { font: `${term.options.fontSize}px ${term.options.fontFamily}`, lineHeight: `${ch}px` });
+      Object.assign(inner.style, textStyle(cw), { lineHeight: `${ch}px` });
       for (const r of p.runs) inner.appendChild(runSpan(r));
       x += p.cols * cw;
     } else {
@@ -529,19 +539,15 @@ function makeJoined(item, cw, ch) {
 // (the line stays source) when the flow needs more rows than the source has.
 // ponytail: wraps at spaces like a browser, not mid-word like the terminal; a line of mostly unbreakable text
 // can need an extra row and fall back to source.
-let advanceCtx = null; // canvas context for the font's real advance width, so text keeps the cell grid
 function makeReflow(item, cw, ch) {
-  const font = `${term.options.fontSize}px ${term.options.fontFamily}`;
-  advanceCtx ??= document.createElement('canvas').getContext('2d');
-  advanceCtx.font = font;
   const el = document.createElement('div');
   el.className = 'auto-math';
   const w = (item.x1 - item.x0) * cw, h = item.rows * ch;
-  Object.assign(el.style, { left: `${item.x0 * cw}px`, top: `${item.top * ch}px`, width: `${w}px`, height: `${h}px`,
-    background: item.bg });
+  moveTo(el, item.x0 * cw, item.top * ch);
+  Object.assign(el.style, { width: `${w}px`, height: `${h}px`, background: item.bg });
   const flow = document.createElement('div');
   flow.className = 'auto-flow';
-  Object.assign(flow.style, { font, lineHeight: `${ch}px`, letterSpacing: `${cw - advanceCtx.measureText('M').width}px` });
+  Object.assign(flow.style, textStyle(cw), { lineHeight: `${ch}px` });
   const boxes = [];
   for (const sg of item.segs) {
     if (sg.runs) { for (const r of sg.runs) flow.appendChild(runSpan(r)); continue; }
@@ -608,8 +614,8 @@ function makeTable(item, cw, ch) {
   const el = document.createElement('div');
   el.className = 'auto-math';
   const w = (item.x1 - item.x0) * cw, h = item.rows * ch;
-  Object.assign(el.style, { left: `${item.x0 * cw}px`, top: `${item.top * ch}px`, width: `${w}px`, height: `${h}px`,
-    background: item.bg, color: term.options.theme.foreground });
+  moveTo(el, item.x0 * cw, item.top * ch);
+  Object.assign(el.style, { width: `${w}px`, height: `${h}px`, background: item.bg, color: term.options.theme.foreground });
   const table = document.createElement('table');
   table.className = 'auto-table';
   table.style.font = `${term.options.fontSize}px ${term.options.fontFamily}`;
@@ -641,8 +647,8 @@ function makeOverlay(item, cw, ch) {
   const el = document.createElement('div');
   const block = item.display && item.rows > 1 && !item.wrapped; // multi-row $$ block: centered both ways
   el.className = `auto-math${block ? ' block' : ''}`;
+  moveTo(el, item.x0 * cw, item.top * ch);
   Object.assign(el.style, {
-    left: `${item.x0 * cw}px`, top: `${item.top * ch}px`,
     width: `${(item.x1 - item.x0) * cw}px`, height: `${item.span * ch}px`,
     color: item.c ? cellColor(item.c, true) : term.options.theme.foreground,
     background: item.c ? cellColor(item.c, false) : term.options.theme.background,
@@ -712,7 +718,7 @@ function scan() {
       if (i < 0) i = pool.length - 1;
       let o = i >= 0 ? pool.splice(i, 1)[0] : null;
       if (o) {
-        Object.assign(o.el.style, { left: `${it.x0 * cw}px`, top: `${it.top * ch}px` });
+        if (o.top !== it.top || o.x0 !== it.x0) moveTo(o.el, it.x0 * cw, it.top * ch);
       } else {
         const el = makeOverlay(it, cw, ch);
         if (!el) continue;
