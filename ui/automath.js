@@ -319,9 +319,20 @@ function findIn(xa, xb, cursorRow) {
   // The reflow item for logical line rows y..yEnd: its text (as styled runs) and math, in order.
   function reflow(y, yEnd, gText, gRow, gCol, ms) {
     const segs = [];
+    // Whitespace spanning a row break is one space: nvim (`linebreak`) pads the wrapped row to the edge
+    // and indents the continuation by its number gutter. No whitespace there (a word split) stays joined.
+    const drop = new Set();
+    for (let j = 1; j < gText.length; j++) {
+      if (gRow[j] === gRow[j - 1]) continue;
+      let l = j, r = j;
+      while (l > 0 && /\s/.test(gText[l - 1])) l--;
+      while (r < gText.length && /\s/.test(gText[r])) r++;
+      for (let i = l + 1; i < r; i++) drop.add(i);
+    }
     const text = (a, z) => {
       const runs = [];
       for (let i = a; i < z; i++) {
+        if (drop.has(i)) continue;
         const c = b.getLine(b.viewportY + gRow[i])?.getCell(gCol[i]);
         if (c) pushRun(runs, cellStyle(c), gText[i]);
       }
@@ -424,11 +435,12 @@ function joinRows(found) {
 
 // Give each match `top`/`span`: its rows plus empty rows around it (no text under it, not the cursor row,
 // not another match). When two matches share a gap, the upper one gets floor(gap/2) and the lower one
-// gets the rest, so they never overlap.
+// gets the rest, so they never overlap. Display math next to inline math gets the whole gap: inline only
+// grows symmetrically, and halving it would shrink the display.
 function grow(found, cursor) {
   const b = term.buffer.active;
-  const taken = new Set(); // `${pane}:${row}`: panes side by side don't block each other's rows
-  for (const f of found) for (let k = 0; k < f.rows; k++) taken.add(`${f.xa}:${f.y + k}`);
+  const taken = new Map(); // `${pane}:${row}` -> match: panes side by side don't block each other's rows
+  for (const f of found) for (let k = 0; k < f.rows; k++) taken.set(`${f.xa}:${f.y + k}`, f);
   const left = new Map(); // row -> leftmost one-row match: math on that row can be shifted as far as this
   for (const f of found) if (f.rows === 1 && !f.wrapped) left.set(`${f.xa}:${f.y}`, Math.min(left.get(`${f.xa}:${f.y}`) ?? f.x0, f.x0));
   for (const f of found) {
@@ -442,8 +454,12 @@ function grow(found, cursor) {
     let up = 0, down = 0;
     while (up < 2 * MAX_GROW && free(f.y - 1 - up, x0, f.x1)) up++;
     while (down < 2 * MAX_GROW && free(last + 1 + down, x0, f.x1)) down++;
-    up = Math.min(MAX_GROW, isTaken(f.y - 1 - up) ? Math.ceil(up / 2) : up);
-    down = Math.min(MAX_GROW, isTaken(last + 1 + down) ? Math.floor(down / 2) : down);
+    const share = (n, y, half) => {
+      const o = taken.get(`${f.xa}:${y}`);
+      return !o ? n : !o.display === !f.display ? half(n / 2) : f.display ? n : 0;
+    };
+    up = Math.min(MAX_GROW, share(up, f.y - 1 - up, Math.ceil));
+    down = Math.min(MAX_GROW, share(down, last + 1 + down, Math.floor));
     if (!f.display) up = down = Math.min(up, down);
     f.top = f.y - up;
     f.span = f.rows + up + down;

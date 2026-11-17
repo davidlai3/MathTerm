@@ -2,6 +2,18 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-17: no gap in reflowed lines wrapped by nvim
+- With `linebreak`, nvim pads a wrapped row to the edge and indents the continuation by its number gutter;
+  the reflow kept all of it, leaving a wide gap mid-sentence. Whitespace spanning a row break is now one
+  space (`reflow` in `findIn`); a break with no whitespace (word split by a soft wrap) still joins.
+- Verified: `npm test` (41 pass, 4 todo; new test fails without the fix). Not run in the app.
+
+## 2026-11-17: display math no longer shrinks next to inline math
+- `grow` split a blank row shared by two matches, so inline math on the line above/below a `$$..$$` took half
+  the gap and the display rendered smaller. Display now gets the whole gap next to inline math (inline still
+  grows only symmetrically); display-display and inline-inline gaps are still split.
+- Verified: `npm test` (40 pass, 4 todo; new "display math takes the whole gap" test). Not run in the app.
+
 ## 2026-11-16: removed `mdv`, OSC 7777 and table rendering
 - mathterm is about typesetting LaTeX in any program's output (auto-detect), so the add-ons are gone (user
   decision): `bin/mdv` (markdown viewer) and its bundling/`PATH` setup, the OSC 7777 protocol it used (query,

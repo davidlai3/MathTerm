@@ -140,6 +140,11 @@ test('two display lines share the gap between them', async () => {
   assert.equal(f[0].top + f[0].span, f[1].top, 'touching, not overlapping');
 });
 
+test('display math takes the whole gap it shares with inline math', async () => {
+  const f = await setup().screen(['for $k$ steps', '', '$$P=Q$$', '', 'some $r$ here']);
+  assert.deepEqual([f[1].top, f[1].span], [1, 3]);
+});
+
 test('display math beside text keeps its position', async () => {
   const [f] = await setup().screen(['so $$a=b$$ holds']);
   assert.equal(f.centered, undefined);
@@ -199,6 +204,11 @@ test('wrapped line with one-row math reflows too (no word split at the edge)', a
   const [f] = await setup({ cols: 20 }).screen(['$a$ then some words for you']);
   assert.ok(f.reflow);
   assert.deepEqual(f.parts, ['a', ' then some words for you']);
+});
+
+test('whitespace across a wrap collapses to one space (nvim linebreak padding + gutter)', async () => {
+  const f = await setup({ cols: 20 }).screen(['$a$ on both sides'.padEnd(20) + '    gives', 'next']);
+  assert.deepEqual(f[0].parts, ['a', ' on both sides gives']);
 });
 
 test('cursor on any row of a wrapped line shows its source', async () => {

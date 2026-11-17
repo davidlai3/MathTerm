@@ -13,12 +13,12 @@ Works on any program's output (Claude Code, `cat`, nvim while editing). On by de
 - **Growing:** a match may take up to `MAX_GROW` (3) empty rows above and below it (empty under its columns,
   not the cursor row, not another match). Display math uses all of them; inline math grows symmetrically so
   it stays centered on its text row. Grown math keeps `GROW_MARGIN` (0.25 row) clear top and bottom.
-  A gap shared by two matches is split (upper gets floor(gap/2)). This is
+  A gap shared by two matches is split (upper gets floor(gap/2)), except display next to inline math takes all of it. This is
   what makes Claude Code's one-line `$$..$$` (between blank lines) render near full size instead of 1 row.
 - **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. A match alone on its
   rows (a long display line) covers them full-width, keeping the source indent. Any other wrapped line with
   math is **reflowed** (`reflow` in `findIn`, `makeReflow`): one overlay over all its rows holds the text (as
-  styled runs) and the math in a `white-space: pre-wrap` flow at the line's width, so the browser re-wraps it
+  styled runs) and the math in a `white-space: pre-wrap` flow at the line's width (whitespace across a row break collapsed to one space), so the browser re-wraps it
   at spaces. `letter-spacing` corrects the font's advance (canvas `measureText`) to the cell width. Math is
   fitted to one row. If the flow needs more rows than the source, the line stays source.
 - A match becomes an absolutely positioned overlay covering the source's cells (plus grown rows), using the source cell's
