@@ -1,9 +1,9 @@
 // Auto-detect mode: find LaTeX in whatever is on screen ($..$, $$..$$, \(..\), \[..\]) and typeset it over
-// the source's own cells. Works for programs that never send OSC 7777: Claude Code, cat, nvim while editing.
+// the source's own cells. Works with any program: Claude Code, cat, nvim while editing.
 // Overlays are screen-positioned and rebuilt from the viewport after every render, diffed by key, so
 // unchanged math is left alone. The cursor row (or a block containing it) keeps showing the source.
 // Toggle: Cmd-Shift-M. Ignore list: `autoDetectIgnore` in config.json.
-// Uses `term`, `invoke`, `config`, `flash`, `keyBindings`, `cellSize`, `INLINE_OVERFLOW`, `rawSpans`, `fitInk` from renderer.js
+// Uses `term`, `invoke`, `config`, `flash`, `keyBindings`, `cellSize`, `INLINE_OVERFLOW`, `fitInk` from renderer.js
 // and `ANSI_KEYS` from themes.js.
 
 let autoMath = true;
@@ -13,7 +13,7 @@ term.element.querySelector('.xterm-screen').appendChild(autoLayer);
 let autoEls = new Map(); // key (everything but position) -> [{ el, top, x0 }] currently shown
 const htmlCache = new Map(); // `${display}|${tex}` -> KaTeX HTML, or null if it doesn't parse
 
-// Same rules as mdv: no space just inside $, closing $ not followed by a digit (so "$5 and $10" is text).
+// No space just inside $, closing $ not followed by a digit (so "$5 and $10" is text).
 // No `│` inside a match, so math can't span an editor's vertical split.
 const INLINE_RX = /\$\$([^$│]+?)\$\$|(?<![\\$])\$(?=[^\s$])([^$│]+?)(?<=\S)\$(?!\$|\d)|\\\((.+?)\\\)|\\\[(.+?)\\\]/g;
 // A row holding only a block delimiter, optionally after an editor's line number: "  12 $$"
@@ -32,8 +32,6 @@ const GROW_MARGIN = 0.25;
 const LONE_OVERFLOW = 1.1;
 // Markdown code: skip rows inside ``` fences (tracked from the top of the viewport) and `inline code`.
 const FENCE = /^\s*(?:\d+\s+)?```/;
-// GFM tables, same rules as mdv: a row with `|`, then a separator row, then rows while they contain `|`.
-const TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // Rows above the viewport read to know whether its top is inside a fence.
 // ponytail: fixed lookback, a fence opened further up is missed; track fence state per line if that bites.
 const FENCE_LOOKBACK = 200;
@@ -172,8 +170,8 @@ const unstrip = (tex) => underbraceLabels(tex
   .replace(ROWS_ENV, (m, env, body) => m.replace(body, () => body.replace(/(?<!\\)\\(?=\s|$)/g, '\\\\'))));
 
 // Side-by-side panes: tmux and editor vertical splits draw a column of `│` down (nearly) the whole screen.
-// Each pane is scanned as its own column range, so a row holding two panes' text still matches `$$` rows,
-// tables and fences, and the cursor only marks the row as being edited in its own pane.
+// Each pane is scanned as its own column range, so a row holding two panes' text still matches `$$` rows
+// and fences, and the cursor only marks the row as being edited in its own pane.
 // ponytail: only full-height borders. A vertical border inside one half of a top/bottom split isn't seen.
 function paneRanges() {
   const b = term.buffer.active;
@@ -223,19 +221,6 @@ function findIn(xa, xb, cursorRow) {
   const found = [];
   const cell = (y, i) => b.getLine(b.viewportY + y)?.getCell(rows[y].col[i]);
 
-  // Literal spans (OSC 7777;raw) by viewport row: [[x0, x1], ...]. A span can wrap onto following rows.
-  const raw = new Map();
-  for (let i = rawSpans.length - 1; i >= 0; i--) {
-    const sp = rawSpans[i];
-    if (sp.marker.isDisposed) { rawSpans.splice(i, 1); continue; }
-    for (let off = sp.offset, left = sp.len; left > 0;) {
-      const y = sp.marker.line + Math.floor(off / term.cols) - b.viewportY, x = off % term.cols;
-      const n = Math.min(left, term.cols - x);
-      if (y >= 0 && y < term.rows) raw.set(y, [...(raw.get(y) || []), [x, x + n]]);
-      off += n; left -= n;
-    }
-  }
-  const isRaw = (y, x0, x1) => (raw.get(y) || []).some(([a, z]) => x0 < z && a < x1);
   let fence0 = false;
   for (let y = Math.max(0, b.viewportY - FENCE_LOOKBACK); y < b.viewportY; y++) {
     if (FENCE.test(b.getLine(y)?.translateToString(true, xa, xb) ?? '')) fence0 = !fence0;
@@ -273,48 +258,11 @@ function findIn(xa, xb, cursorRow) {
   const asOpener = pairBlocks(false), asCloser = pairBlocks(true);
   const blocks = (asCloser.score > asOpener.score ? asCloser : asOpener).blocks;
 
-  // A markdown table starting at row y, or null. While the cursor is in it, the whole table shows source.
-  function tableAt(y) {
-    const sep = rows[y + 1]?.text;
-    if (!sep || !rows[y].text.includes('|')) return null;
-    const g = /^\s*\d+\s+(?=[|:-])/.exec(sep)?.[0].length ?? 0; // an editor's line-number gutter
-    if (!TABLE_SEP.test(sep.slice(g)) || !rows[y].text.slice(g).includes('|')) return null;
-    let end = y + 1;
-    while (end + 1 < rows.length && rows[end + 1].text.slice(g).includes('|')) end++;
-    // ponytail: a soft-wrapped row (narrow window) leaves the table as source; reflowing it would need
-    // the logical lines joined first.
-    for (let k = y + 1; k <= Math.min(end + 1, rows.length - 1); k++) {
-      if (wrapped(k)) return null;
-    }
-    if (cursorRow >= y && cursorRow <= end) return { skip: true, y, rows: end - y + 1 };
-    let x0 = term.cols, x1 = 0;
-    for (let k = y; k <= end; k++) {
-      const { text, col, wid } = rows[k];
-      const i0 = g + text.slice(g).search(/\S/), i1 = text.trimEnd().length - 1;
-      x0 = Math.min(x0, col[i0]);
-      x1 = Math.max(x1, col[i1] + wid[i1]);
-    }
-    const aligns = splitCells(sep.slice(g)).map((c) => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : 'left'));
-    const fit = (cs) => aligns.map((_, i) => cs[i] ?? '');
-    const head = fit(splitCells(rows[y].text.slice(g)));
-    const body = rows.slice(y + 2, end + 1).map((r) => fit(splitCells(r.text.slice(g))));
-    const c = cell(y, g + rows[y].text.slice(g).search(/\S/));
-    const bg = c ? cellColor(c, false) : term.options.theme.background;
-    return { table: true, y, rows: end - y + 1, x0, x1, head, aligns, body, bg,
-      key: JSON.stringify(['table', x1 - x0, end - y, head, aligns, body, bg]) };
-  }
-
   let inFence = fence0;
   for (let y = 0; y < rows.length; y++) {
     const { text, col, wid } = rows[y];
     if (FENCE.test(text)) { inFence = !inFence; continue; }
     if (inFence) continue;
-    const tbl = config.autoDetectTables !== false && tableAt(y); // off: leave tables to e.g. an nvim plugin
-    if (tbl) {
-      if (!tbl.skip) found.push(tbl);
-      y = tbl.y + tbl.rows - 1;
-      continue;
-    }
     if (blocks.has(y)) {
       const blk = blocks.get(y);
       if (!blk) continue; // closing `$$` of a block that started above the viewport
@@ -348,7 +296,6 @@ function findIn(xa, xb, cursorRow) {
       if (cursorRow >= r0 && cursorRow <= r1) continue; // editing this line: show the source
       if ((gText.slice(0, i0).match(/`/g) || []).length % 2) continue; // inside `inline code`
       const x0 = gCol[i0], x1 = gCol[i1 - 1] + gWid[i1 - 1];
-      if (r0 === r1 ? isRaw(r0, x0, x1) : isRaw(r0, x0, xb) || isRaw(r1, xa, x1)) continue;
       const c = b.getLine(b.viewportY + gRow[i0 + (display ? 2 : 1)])?.getCell(gCol[i0 + (display ? 2 : 1)]);
       ms.push({ i0, i1, r0, r1, x0, x1, tex, display, c });
     }
@@ -395,7 +342,7 @@ function findIn(xa, xb, cursorRow) {
   }
 }
 
-// Display math is centered on the window (as mdv's is) when its rows, grown ones included, hold nothing
+// Display math is centered on the window when its rows, grown ones included, hold nothing
 // else. An editor's line-number gutter may sit to the left: it stays visible and the math is centered in
 // the rest. Centered within its pane when the screen is split (see paneRanges). Anything else on those rows
 // (text beside a one-line $$..$$) keeps the source position.
@@ -489,7 +436,7 @@ function grow(found, cursor) {
     const editing = (y) => cursor && y === cursor.y && cursor.x >= f.xa && cursor.x < f.xb;
     const free = (y, x0, x1) => y >= 0 && y < term.rows && !editing(y) && !isTaken(y) &&
       (b.getLine(b.viewportY + y)?.translateToString(true, x0, x1) ?? '').trim() === '';
-    if (f.table || f.reflow) { f.top = f.y; f.span = f.rows; continue; } // these keep exactly their rows
+    if (f.reflow) { f.top = f.y; f.span = f.rows; continue; } // keeps exactly its rows
     const last = f.y + f.rows - 1;
     const x0 = f.rows === 1 && !f.wrapped ? left.get(`${f.xa}:${f.y}`) : f.x0;
     let up = 0, down = 0;
@@ -573,73 +520,7 @@ function makeReflow(item, cw, ch) {
   return el;
 }
 
-// A table row's cells. `|` inside math or code spans, or escaped as `\|`, doesn't split.
-function splitCells(row) {
-  row = row.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
-  const out = [];
-  let cur = '', math = false, code = false;
-  for (let i = 0; i < row.length; i++) {
-    const ch = row[i];
-    if (ch === '\\' && row[i + 1] === '|') { cur += '|'; i++; continue; }
-    if (ch === '`' && !math) code = !code;
-    if (ch === '$' && !code) math = !math;
-    if (ch === '|' && !math && !code) { out.push(cur.trim()); cur = ''; continue; }
-    cur += ch;
-  }
-  out.push(cur.trim());
-  return out;
-}
-
-// Inline markdown in a table cell, as HTML: math, `code`, **bold**, *italic* / _italic_, ~~struck~~.
-function cellHtml(src) {
-  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const keep = []; // finished HTML for code and math, swapped back in after the emphasis pass
-  const hold = (html) => `\u0000${keep.push(html) - 1}\u0000`;
-  let s = src.replace(/`([^`]+)`/g, (_, code) => hold(`<code style="color:${term.options.theme.yellow}">${esc(code)}</code>`));
-  s = s.replace(INLINE_RX, (m, a, b, c, d) => {
-    const html = katexHtml(unstrip((a ?? b ?? c ?? d).trim()), false);
-    return html ? hold(html) : m;
-  });
-  s = esc(s)
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/~~(.+?)~~/g, '<s>$1</s>')
-    .replace(/(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])/g, '<i>$1</i>')
-    .replace(/(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)/g, '<i>$1</i>');
-  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[i]);
-}
-
-// A markdown table drawn over its source rows: the header takes the header and separator rows, then one
-// row per body row. Scaled down if it doesn't fit (tall math in a cell, or rendering wider than the source).
-function makeTable(item, cw, ch) {
-  const el = document.createElement('div');
-  el.className = 'auto-math';
-  const w = (item.x1 - item.x0) * cw, h = item.rows * ch;
-  moveTo(el, item.x0 * cw, item.top * ch);
-  Object.assign(el.style, { width: `${w}px`, height: `${h}px`, background: item.bg, color: term.options.theme.foreground });
-  const table = document.createElement('table');
-  table.className = 'auto-table';
-  table.style.font = `${term.options.fontSize}px ${term.options.fontFamily}`;
-  const addRow = (cells, tag, rowH) => {
-    const tr = table.insertRow();
-    cells.forEach((c, i) => {
-      const td = document.createElement(tag);
-      td.innerHTML = cellHtml(c);
-      Object.assign(td.style, { textAlign: item.aligns[i], height: `${rowH - 1}px` }); // -1: the shared border
-      tr.appendChild(td);
-    });
-  };
-  addRow(item.head, 'th', 2 * ch);
-  for (const r of item.body) addRow(r, 'td', ch);
-  el.appendChild(table);
-  autoLayer.appendChild(el);
-  const r = table.getBoundingClientRect();
-  const s = Math.min(1, w / r.width, h / r.height);
-  if (s < 1) table.style.transform = `scale(${s})`;
-  return el;
-}
-
 function makeOverlay(item, cw, ch) {
-  if (item.table) return makeTable(item, cw, ch);
   if (item.joined) return makeJoined(item, cw, ch);
   if (item.reflow) return makeReflow(item, cw, ch);
   const html = katexHtml(item.tex, item.display);

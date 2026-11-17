@@ -2,7 +2,7 @@
 
 Euler's identity $e^{i\pi} + 1 = 0$ sits inline, and so does $\alpha^2 + \beta^2$.
 Inline fractions like $\frac{1}{2} + \frac{a}{b}$ fit in their row.
-Taller ones like $\frac{\frac{1}{2}}{x+1}$ or $\sum_{i=1}^{n} i$ get a blank line above and below.
+Taller ones like $\frac{\frac{1}{2}}{x+1}$ or $\sum_{i=1}^{n} i$ are shrunk to fit their row.
 The next line is normal again.
 
 ## Display math
@@ -24,12 +24,6 @@ $$
 > A quote: costs $5 and $10 are not math.
 
 ---
-
-| Function | Derivative | Note |
-|----------|:----------:|-----:|
-| $x^n$ | $n x^{n-1}$ | power rule |
-| $e^x$ | $e^x$ | its own derivative |
-| `sin` | $\cos x$ | **trig** |
 
 ```python
 def f(x):  # $not_math$ in code

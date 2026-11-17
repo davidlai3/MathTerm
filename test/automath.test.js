@@ -20,7 +20,7 @@ function setup({ cols = 80, rows = 24, config = {} } = {}) {
   const clock = { t: 1e6 };
   const ctx = vm.createContext({
     term, katex, config, console, setTimeout,
-    rawSpans: [], INLINE_OVERFLOW: 1.0, keyBindings: [],
+    INLINE_OVERFLOW: 1.0, keyBindings: [],
     cellSize: () => [8, 16], fitInk() {}, flash() {}, invoke: async () => '',
     katexFonts: new Promise(() => {}), setInterval: () => 0, requestAnimationFrame: () => 0,
     performance: { now: () => clock.t },
@@ -52,7 +52,7 @@ function setup({ cols = 80, rows = 24, config = {} } = {}) {
 }
 const pick = (f) => Object.fromEntries(Object.entries({
   y: f.y, rows: f.rows, x0: f.x0, x1: f.x1, top: f.top, span: f.span, tex: f.tex, display: f.display,
-  centered: f.centered, wrapped: f.wrapped, table: f.table, joined: f.joined, reflow: f.reflow,
+  centered: f.centered, wrapped: f.wrapped, joined: f.joined, reflow: f.reflow,
   head: f.head, body: f.body, parts: (f.parts ?? f.segs)?.map((p) => p.tex ?? p.runs.map((r) => r.s).join('')),
 }).filter(([, v]) => v !== undefined));
 const texs = (found) => found.flatMap((f) => (f.joined ? f.parts.filter((_, i) => i % 2 === 0)
@@ -110,13 +110,6 @@ test('hidden cursor (Claude Code) does not block its row', async () => {
 test('wide characters before math keep cell columns', async () => {
   const [f] = await setup().screen(['中文 $x$']);
   assert.deepEqual([f.x0, f.x1], [5, 8]);
-});
-
-test('raw spans (OSC 7777;raw) are never typeset', async () => {
-  const t = setup();
-  await t.write('$x$');
-  t.g('rawSpans').push({ marker: t.term.registerMarker(0), offset: 0, len: 3 });
-  assert.deepEqual(await t.screen([]), []);
 });
 
 test('two matches with text between are joined, text redrawn in between', async () => {
@@ -230,21 +223,11 @@ test('tmux side-by-side panes are scanned separately', async () => {
   assert.deepEqual(f.map((x) => [x.tex, x.x0 >= 40]), [['x^2', false], ['y', true]]);
 });
 
-// ---- tables ----
+// ---- markdown tables: left as text, math in cells still typeset ----
 
-test('GFM table with math in a cell', async () => {
-  const [f] = await setup().screen(['| a | b |', '|:-|-:|', '| $x$ | 2 |']);
-  assert.ok(f.table);
-  assert.deepEqual([f.head, f.body], [['a', 'b'], [['$x$', '2']]]);
-});
-
-test('autoDetectTables: false leaves the table but typesets its math', async () => {
-  const f = await setup({ config: { autoDetectTables: false } }).screen(['| a |', '|---|', '| $x$ |']);
+test('markdown table: only its math is typeset', async () => {
+  const f = await setup().screen(['| a | b |', '|:-|-:|', '| $x$ | 2 |']);
   assert.deepEqual(texs(f), ['x']);
-});
-
-test('cursor in a table shows source', async () => {
-  assert.deepEqual(await setup().screen(['| a |', '|---|', '| b |'], { cursor: [2, 1] }), []);
 });
 
 // ---- pure helpers ----
@@ -259,19 +242,6 @@ test('unstrip repairs eaten escapes', () => {
   assert.equal(u('a,\\times,b'), 'a\\,\\times\\,b');
   assert.equal(u('\\begin{bmatrix}1 & 2 \\ 3 & 4\\end{bmatrix}'), '\\begin{bmatrix}1 & 2 \\\\ 3 & 4\\end{bmatrix}');
   assert.equal(u('a\\ b'), 'a\\ b', 'control space outside environments is left alone');
-});
-
-test('splitCells keeps | inside math, code and \\|', () => {
-  const s = setup().g('splitCells');
-  assert.deepEqual(s('| $|x|$ | `a|b` | c\\|d |'), ['$|x|$', '`a|b`', 'c|d']);
-});
-
-test('cellHtml: emphasis, code, math', () => {
-  const h = setup().g('cellHtml');
-  assert.match(h('**b** *i* ~~s~~'), /<b>b<\/b> <i>i<\/i> <s>s<\/s>/);
-  assert.match(h('`a<b`'), /<code[^>]*>a&lt;b<\/code>/);
-  assert.match(h('$x$'), /class="katex"/);
-  assert.equal(h('snake_case_name'), 'snake_case_name');
 });
 
 test('ignore list matches argument basenames', () => {
@@ -289,11 +259,6 @@ test('invalid LaTeX does not render', () => {
 // ---- known bugs (notes/plans.md) ----
 
 
-
-test('soft-wrapped table row still renders as a table', { todo: 'plans.md: Tables' }, async () => {
-  const f = await setup({ cols: 20 }).screen(['| a | b |', '|---|---|', '| a long cell here | 2 |']);
-  assert.ok(f[0]?.table);
-});
 
 test('fence opened beyond FENCE_LOOKBACK rows up', { todo: 'automath.js: FENCE_LOOKBACK' }, async () => {
   const lines = ['```', ...Array.from({ length: 250 }, (_, i) => `code ${i}`), '$x$'];

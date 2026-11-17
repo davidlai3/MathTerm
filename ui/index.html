@@ -6,17 +6,9 @@
   <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="vendor/katex.min.css">
   <style>
-    :root { --bg: #1e1e1e; --fg: #ffffff; --dim: #555753; --h1: #75507b; --status-bg: #2e3436; --font-size: 14px; }
+    :root { --bg: #1e1e1e; --fg: #ffffff; --dim: #555753; --status-bg: #2e3436; --font-size: 14px; }
     html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
     #term { height: 100%; padding: 4px; box-sizing: border-box; }
-    /* xterm puts an inline display:block on decorations, so children are positioned, not flexed */
-    .math { overflow: hidden; background: var(--bg); color: var(--fg); font-size: var(--font-size); pointer-events: none; }
-    .math.inline { overflow: visible; }
-    .math > div { position: absolute; left: 0; top: 50%; white-space: nowrap; transform-origin: left center; }
-    .math.display > div { left: 50%; transform-origin: center; }
-    .math-probe { position: absolute; top: 0; left: 0; visibility: hidden;
-                  display: inline-block; white-space: nowrap; font-size: var(--font-size); }
-    .math .katex-display, .math-probe .katex-display { margin: 0; }
     .auto-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
     .auto-math { position: absolute; left: 0; top: 0; font-size: var(--font-size); } /* placed by transform */
     .auto-math > div { position: absolute; left: 0; top: 50%; white-space: nowrap; transform-origin: left center; }
@@ -26,8 +18,6 @@
     .auto-math > .auto-flow { top: 0; width: 100%; transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
     .auto-inline { display: inline-block; position: relative; vertical-align: top; }
     .auto-inline > div { position: absolute; left: 0; top: 50%; white-space: nowrap; transform-origin: left center; }
-    .auto-table { position: absolute; left: 0; top: 0; border-collapse: collapse; white-space: nowrap; transform-origin: left top; }
-    .auto-table th, .auto-table td { border: 1px solid var(--dim); padding: 0 1ch; vertical-align: middle; }
     #status { position: fixed; left: 6px; bottom: 6px; max-width: 80%; overflow: hidden; text-overflow: ellipsis;
               white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: var(--status-bg); color: var(--fg);
               font: 12px -apple-system, sans-serif; pointer-events: none; z-index: 10; }
@@ -38,9 +28,6 @@
     #find[hidden] { display: none; }
     #find input { width: 200px; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; }
     #find .count { color: var(--dim); min-width: 3em; text-align: right; }
-    .rule { pointer-events: none; }
-    .rule::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--dim); }
-    .rule-h1::after { top: calc(50% - 2px); border-top: 3px double var(--h1); }
   </style>
 </head>
 <body>

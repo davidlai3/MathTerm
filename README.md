@@ -20,8 +20,6 @@ math over the cells where the source sits, in the source's own colors.
   markdown lay out equations, so it renders at full size instead of being squeezed into one row.
 - **Few false positives:** `$5 and $10` stays text, code fences and `` `inline code` `` are skipped, and
   anything KaTeX can't parse is left alone.
-- **Tables:** markdown tables (`| a | b |` with a `|---|` row) are drawn as real tables in their own
-  rows, with column alignment and math, code, bold and italic in cells.
 - **No gaps:** math usually renders narrower than its LaTeX source, so the text after it is redrawn
   flush against it.
 - **Copy works:** the cells still hold the source, so copying an equation gives you its LaTeX.
@@ -43,11 +41,9 @@ macOS only for now (Apple silicon and Intel).
    xattr -dr com.apple.quarantine /Applications/mathterm.app
    ```
 
-`mdv` (below) is bundled and on mathterm's `PATH`. It needs Python 3 (`xcode-select --install` provides it).
-
 ### Build from source
 
-Requires Node, Rust (`brew install rust`) and Python 3.
+Requires Node and Rust (`brew install rust`).
 
 ```sh
 npm install
@@ -67,7 +63,6 @@ npm run app    # builds mathterm.app and installs it in /Applications
   "fontFamily": "Menlo, monospace",
   "lineHeight": 1.2,
   "autoDetectIgnore": ["*.tex", "*.sty", "*.cls"],
-  "autoDetectTables": true,
   "renderer": "webgl"
 }
 ```
@@ -82,9 +77,6 @@ nvim's `set title`, switching files with `:e` is picked up as well.
 
 `renderer: "dom"` uses xterm's DOM renderer instead of WebGL (slower scrolling; try it if rows draw stale).
 
-`autoDetectTables: false` turns off table rendering, e.g. if an editor plugin already draws tables. Math in
-table rows is still typeset.
-
 | Keys | |
 |---|---|
 | Cmd-N / Cmd-W | New / close window |
@@ -94,29 +86,6 @@ table rows is still typeset.
 | Cmd-Shift-M | Toggle math detection |
 | Cmd-click | Open a link (hover shows the URL) |
 
-## Add-on: `mdv`, a markdown viewer
-
-Detection can only use the space a program already left for the math, so tall inline math between lines
-of text is shrunk to fit its row. `mdv` is a small viewer (Python, stdlib only) that lays the page out itself:
-
-```sh
-mdv notes.md                         # styled markdown with typeset math
-echo 'Euler: $e^{i\pi}+1=0$' | mdv   # or read from stdin
-```
-
-![mdv rendering a markdown file: headings, inline and display math, a table, highlighted code](docs/demo.png)
-
-- Headings, bold/italic/strikethrough, lists, quotes, rules and clickable links.
-- Tables with borders and alignment, sized correctly around math in cells.
-- Syntax-highlighted code blocks (`pip3 install pygments` for better lexers; there's a built-in fallback).
-- Exact math layout: no gaps after inline math, tall inline math gets its own spacing, and display math
-  is centered.
-
-`mdv` talks to mathterm through **OSC 7777**, a small private escape sequence for asking how big an equation
-renders and drawing it in space the program reserved. The details are in
-[notes/protocol.md](notes/protocol.md). In other terminals `mdv` still styles the markdown and leaves the
-math as source. With output redirected (`mdv f.md > out`) it prints the file unchanged.
-
 ## Status
 
 Early prototype, macOS only. Known gaps:
@@ -125,7 +94,6 @@ Early prototype, macOS only. Known gaps:
   stays raw LaTeX. Widening the window usually fixes it.
 - Tall inline math with text directly above and below is shrunk to fit its row.
 - TUIs that draw code blocks without backticks (Claude Code does) can get `$var$`-like text typeset.
-- In `mdv`, tables wider than the window wrap and break their borders.
 
 Detection is heuristic, so real examples help most. If something renders wrong, please
 [open an issue](https://github.com/davidlai3/MathTerm/issues/new/choose) with the raw text.
@@ -134,7 +102,6 @@ Detection is heuristic, so real examples help most. If something renders wrong, 
 
 - **Detection polish:** check Claude Code's handling of inline `$...$` and `\(...\)`, and recognize code
   blocks drawn without backticks.
-- **Live preview:** `mdv --watch` in a split pane, for the fully styled page beside your editor.
 
 The [plans](notes/plans.md) and [changelog](notes/changelog.md) are in `notes/`.
 

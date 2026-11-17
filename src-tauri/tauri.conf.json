@@ -16,7 +16,6 @@
     "active": true,
     "targets": ["app"],
     "icon": ["icons/icon.png", "icons/icon.icns"],
-    "resources": { "../bin/mdv": "bin/mdv" },
     "macOS": { "signingIdentity": "-" }
   }
 }

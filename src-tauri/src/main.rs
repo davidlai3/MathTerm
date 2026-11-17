@@ -39,13 +39,6 @@ fn start(app: AppHandle, window: WebviewWindow, session: State<Session>, cols: u
     if std::env::var_os("LANG").is_none() {
         cmd.env("LANG", "en_US.UTF-8");
     }
-    // mdv: the source tree's bin/ in dev (edits apply without a rebuild), the bundled copy in the .app.
-    let bin = if cfg!(debug_assertions) {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../bin").into()
-    } else {
-        app.path().resource_dir().map_err(|e| e.to_string())?.join("bin").display().to_string()
-    };
-    cmd.env("PATH", format!("{bin}:{}", std::env::var("PATH").unwrap_or_default()));
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);

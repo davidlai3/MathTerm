@@ -6,10 +6,9 @@ Needs Rust (`brew install rust`) and Node.
 npm install        # also copies vendor files into ui/
 npm start          # tauri dev: build + run
 npm run app        # release .app, installed to /Applications
-npm run shot       # launch, run `mdv demo.md`, screenshot just the window to shot.png, quit
-npm run shot:docs  # same at 900x1010, saved as docs/demo.png for the README
-bin/mdv --test     # mdv self-check
-npm test           # auto-detect tests (test/, headless xterm) + mdv self-check
+npm run shot       # launch, `cat demo.md`, screenshot just the window to shot.png, quit
+npm run shot:docs  # nvim on demo.md at 900x700, saved as docs/nvim.png for the README
+npm test           # auto-detect + OSC 52 tests (test/, headless xterm)
 ```
 
 - Dev hooks (in `main.rs`): `MATHTERM_INIT` (command typed 1.5s after the shell starts), `MATHTERM_SHOT`
@@ -22,7 +21,7 @@ npm test           # auto-detect tests (test/, headless xterm) + mdv self-check
   a window that isn't visible (e.g. when you click away) and the shot comes out blank or missing.
 - The window sometimes captures blank (no text at all), roughly 1 run in 6. Rerun.
 - Earlier "missing" and "prompt only" shots were two races: INIT was typed before zsh finished starting
-  (it sometimes dropped the Enter), and a fixed shot delay could beat `sleep N; mdv`. Fixed with the 1.5s
+  (it sometimes dropped the Enter), and a fixed shot delay could beat `sleep N; <command>`. Fixed with the 1.5s
   INIT delay and the `.ready` signal.
 - Gotcha: don't name a top-level `const` after a `window` property (`status`, `name`, ...). WebKit throws a
   SyntaxError and the whole script, and so the terminal, never runs.

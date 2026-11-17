@@ -1,10 +1,10 @@
 # Auto-detect mode (`ui/automath.js`)
 
-For programs that never send OSC 7777 (Claude Code, `cat`, nvim while editing). On by default; Cmd-Shift-M toggles.
+Works on any program's output (Claude Code, `cat`, nvim while editing). On by default; Cmd-Shift-M toggles.
 
 - After every render, scroll, resize or cursor move (coalesced to one per animation frame), every viewport row is
   read cell by cell (with a string-index to cell-column map, so wide characters line up) and matched for
-  `$..$`, `$$..$$`, `\(..\)`, `\[..\]` with `mdv`'s `$` rules. Rows that are only `$$` or `\[` (optionally
+  `$..$`, `$$..$$`, `\(..\)`, `\[..\]` (no space just inside `$`, closing `$` not followed by a digit). Rows that are only `$$` or `\[` (optionally
   after an editor line number) open a multi-row block, up to 30 rows.
 - **Panes:** full-height vertical `│` borders (tmux, editor splits) split the screen into column ranges that
   are scanned separately (`paneRanges`, `findIn`). Inside a pane, a row reaching the pane's edge continues
