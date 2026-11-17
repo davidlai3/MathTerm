@@ -211,6 +211,17 @@ test('whitespace across a wrap collapses to one space (nvim linebreak padding + 
   assert.deepEqual(f[0].parts, ['a', ' on both sides gives']);
 });
 
+test('nvim wrap (unnumbered row under a numbered gutter) joins and reflows', async () => {
+  const f = await setup({ cols: 40 }).screen(['  1 intro', '  2 $P$ then $\\lim_{n \\to', '    \\infty} a$ ok', '  3 end']);
+  const r = f.find((x) => x.reflow);
+  assert.deepEqual([r.y, r.rows, r.parts.map((p, i) => (i === 3 ? p.replace(/\s+/g, ' ') : p))], [1, 2, ['  2 ', 'P', ' then ', '\\lim_{n \\to \\infty} a', ' ok']]);
+});
+
+test('nvim wrap without linebreak joins a split word', async () => {
+  const f = await setup({ cols: 16 }).screen(['  1 intro', '  2 see $x$ abwo', '    rd', '  3 end']);
+  assert.deepEqual(f.find((x) => x.reflow).parts, ['  2 see ', 'x', ' abword']);
+});
+
 test('cursor on any row of a wrapped line shows its source', async () => {
   assert.deepEqual(await setup({ cols: 20 }).screen(['some words and $x^2+y^2$ more'], { cursor: [1, 3] }), []);
 });

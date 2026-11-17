@@ -2,6 +2,14 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-17: nvim-wrapped lines join and reflow
+- nvim wraps with cursor moves, not soft wraps, so its wrapped lines were matched row by row: math split
+  across the break stayed source, and text after shrunk math left a gap. In a mostly numbered pane
+  (`NUM_GUTTER` on at least half the non-empty rows), an unnumbered row after a line, blank under its gutter,
+  is a continuation: the gutter is cut and the line joins (then reflows, with a hanging indent `hang`; `.auto-inline > div` resets the inherited `text-indent`).
+- Without `number` nvim's wraps still aren't seen (nothing marks them).
+- Verified: `npm test` (43 pass, 4 todo; 2 new tests). Not run in the app.
+
 ## 2026-11-17: no gap in reflowed lines wrapped by nvim
 - With `linebreak`, nvim pads a wrapped row to the edge and indents the continuation by its number gutter;
   the reflow kept all of it, leaving a wide gap mid-sentence. Whitespace spanning a row break is now one

@@ -19,6 +19,8 @@ const INLINE_RX = /\$\$([^$│]+?)\$\$|(?<![\\$])\$(?=[^\s$])([^$│]+?)(?<=\S)\
 // A row holding only a block delimiter, optionally after an editor's line number: "  12 $$"
 const BLOCK_OPEN = /^(\s*(?:\d+\s+)?)(\$\$|\\\[)\s*$/;
 const MAX_BLOCK_ROWS = 30;
+// An editor's line number at the start of a row: "  12 "
+const NUM_GUTTER = /^\s*\d+ /;
 // Math may grow into this many empty rows above and below its source (programs like Claude Code put a
 // one-line $$..$$ between blank lines). Display math uses all of it; inline math grows symmetrically so it
 // stays centered on its text row.
@@ -217,7 +219,21 @@ function findIn(xa, xb, cursorRow) {
   // taken to continue on the next row. Within one column, because the break can land on a space.
   const full = xa === 0 && xb === term.cols;
   const fills = (r) => { const n = r.text.trimEnd().length; return n > 0 && r.col[n - 1] + r.wid[n - 1] >= xb - 1; };
-  const wrapped = (y) => (full ? !!b.getLine(b.viewportY + y)?.isWrapped : y > 0 && fills(rows[y - 1]));
+  // nvim's `number` column: every buffer line is numbered, so in a mostly numbered pane an unnumbered row
+  // after a line, blank under its gutter, is that line's wrap (nvim wraps with cursor moves, which xterm
+  // doesn't mark isWrapped). The gutter is cut from the row so the line joins as if unwrapped.
+  const nums = rows.map((r) => NUM_GUTTER.exec(r.text)?.[0].length ?? 0);
+  const texty = rows.filter((r) => r.text.trim()).length;
+  const gut = rows.map(() => 0); // continuation row -> gutter width cut from it
+  if (texty >= 3 && nums.filter(Boolean).length * 2 >= texty) {
+    for (let y = 1; y < rows.length; y++) {
+      const g = nums[y - 1] || gut[y - 1], r = rows[y];
+      if (nums[y] || !g || !r.text.trim() || r.text.slice(0, g).trim()) continue;
+      gut[y] = g;
+      rows[y] = { text: r.text.slice(g), col: r.col.slice(g), wid: r.wid.slice(g) };
+    }
+  }
+  const wrapped = (y) => gut[y] > 0 || (full ? !!b.getLine(b.viewportY + y)?.isWrapped : y > 0 && fills(rows[y - 1]));
   const found = [];
   const cell = (y, i) => b.getLine(b.viewportY + y)?.getCell(rows[y].col[i]);
 
@@ -348,8 +364,9 @@ function findIn(xa, xb, cursorRow) {
     text(at, gText.trimEnd().length);
     const c0 = cell(y, 0);
     const bg = c0 ? cellColor(c0, false) : term.options.theme.background;
-    return { reflow: true, y, rows: yEnd - y + 1, x0: xa, x1: xb, segs, bg,
-      key: JSON.stringify(['reflow', xb - xa, yEnd - y, bg, segs]) };
+    const hang = gut[y + 1]; // nvim continuation rows start past the number gutter
+    return { reflow: true, y, rows: yEnd - y + 1, x0: xa, x1: xb, segs, bg, hang,
+      key: JSON.stringify(['reflow', xb - xa, yEnd - y, bg, hang, segs]) };
   }
 }
 
@@ -511,6 +528,7 @@ function makeReflow(item, cw, ch) {
   const flow = document.createElement('div');
   flow.className = 'auto-flow';
   Object.assign(flow.style, textStyle(cw), { lineHeight: `${ch}px` });
+  if (item.hang) Object.assign(flow.style, { boxSizing: 'border-box', paddingLeft: `${item.hang * cw}px`, textIndent: `${-item.hang * cw}px` });
   const boxes = [];
   for (const sg of item.segs) {
     if (sg.runs) { for (const r of sg.runs) flow.appendChild(runSpan(r)); continue; }

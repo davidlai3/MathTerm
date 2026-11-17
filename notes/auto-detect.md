@@ -15,7 +15,7 @@ Works on any program's output (Claude Code, `cat`, nvim while editing). On by de
   it stays centered on its text row. Grown math keeps `GROW_MARGIN` (0.25 row) clear top and bottom.
   A gap shared by two matches is split (upper gets floor(gap/2)), except display next to inline math takes all of it. This is
   what makes Claude Code's one-line `$$..$$` (between blank lines) render near full size instead of 1 row.
-- **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. A match alone on its
+- **Soft wraps:** rows are joined with their `isWrapped` continuations before matching. nvim's wraps are cursor moves (no `isWrapped`): in a mostly line-numbered pane, an unnumbered row after a line, blank under its number gutter, is its continuation (gutter cut; the reflow hangs it by the gutter width). A match alone on its
   rows (a long display line) covers them full-width, keeping the source indent. Any other wrapped line with
   math is **reflowed** (`reflow` in `findIn`, `makeReflow`): one overlay over all its rows holds the text (as
   styled runs) and the math in a `white-space: pre-wrap` flow at the line's width (whitespace across a row break collapsed to one space), so the browser re-wraps it
