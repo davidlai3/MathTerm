@@ -4,7 +4,7 @@
 |---|---|
 | `src-tauri/src/main.rs` | Tauri backend. `start` spawns the login shell in a pty (`portable-pty`) and streams its output to the window as `pty` events (UTF-8 split across reads is carried over). `write` / `resize` commands go the other way. Sets `MATHTERM=1`. |
 | `src-tauri/tauri.conf.json` | Window, CSP, and `frontendDist = ui/`. |
-| `ui/renderer.js` | xterm.js terminal (WebGL renderer, DOM fallback on context loss): config, themes, zoom, find, keybindings, OSC 8 links (Cmd-click opens via `open_url`, which only accepts `https://`, `http://` and `mailto:`), and the KaTeX measuring helpers auto-detect uses (`inkBox`, `fitInk`). Talks to Rust via `window.__TAURI__` (`withGlobalTauri`). |
+| `ui/renderer.js` | xterm.js terminal (WebGL renderer, DOM fallback on context loss): config, themes, zoom, find, keybindings, OSC 8 and plain-URL links (`addon-web-links`; Cmd-click opens via `open_url`, which only accepts `https://`, `http://` and `mailto:`), and the KaTeX measuring helpers auto-detect uses (`inkBox`, `fitInk`). Talks to Rust via `window.__TAURI__` (`withGlobalTauri`). |
 | `ui/clipboard.js` | OSC 52 clipboard writes (nvim, tmux `set-clipboard on`, ssh) to the Rust `copy` command (`pbcopy`). Reads (`?`) are ignored. |
 | `ui/themes.js` | Built-in color schemes (`default`, `catppuccin-mocha`) in xterm ITheme form. |
 | `ui/automath.js` | Auto-detect mode: scans the viewport for LaTeX in any program's output and overlays typeset math on the source cells. Toggle with Cmd-Shift-M. |

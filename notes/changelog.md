@@ -2,6 +2,14 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-18: Cmd-click opens plain URLs
+- Only OSC 8 hyperlinks were clickable (mostly emitted by the removed `mdv`), so URLs printed as plain text
+  (`git`, Claude Code, `ls`) did nothing. Added `@xterm/addon-web-links` (0.12.0, the xterm 6 release),
+  sharing the OSC 8 handler: hover shows the URL, Cmd-click opens it via `open_url`.
+- Verified: `node --check`, `npm test`, and Cmd-click on a plain URL and an OSC 8 link in the app (user).
+
+**v0.1.4 released 2026-11-18** (commit `2900924`): everything below.
+
 ## 2026-11-17: nvim-wrapped lines join and reflow
 - nvim wraps with cursor moves, not soft wraps, so its wrapped lines were matched row by row: math split
   across the break stayed source, and text after shrunk math left a gap. In a mostly numbered pane
@@ -21,6 +29,8 @@ New entries go above the latest release marker; everything below a marker shippe
   the gap and the display rendered smaller. Display now gets the whole gap next to inline math (inline still
   grows only symmetrically); display-display and inline-inline gaps are still split.
 - Verified: `npm test` (40 pass, 4 todo; new "display math takes the whole gap" test). Not run in the app.
+
+**v0.1.3 released 2026-11-17** (commit `142d5d7`): everything below.
 
 ## 2026-11-16: removed `mdv`, OSC 7777 and table rendering
 - mathterm is about typesetting LaTeX in any program's output (auto-detect), so the add-ons are gone (user

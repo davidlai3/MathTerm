@@ -4,19 +4,22 @@ const pty = {
   resize: (cols, rows) => invoke('resize', { cols, rows }),
 };
 
+// Links (OSC 8 hyperlinks and plain URLs in the text): show the target on hover, open with Cmd-click (plain
+// clicks still select text)
+const links = {
+  activate: (e, uri) => { if (e.metaKey) invoke('open_url', { url: uri }); },
+  hover: (_, uri) => { statusBar.textContent = `${uri}  ·  ⌘-click to open`; statusBar.hidden = false; },
+  leave: () => { statusBar.hidden = true; },
+};
 const term = new Terminal({
   allowProposedApi: true,
   fontFamily: 'Menlo, monospace',
   fontSize: 14,
   lineHeight: 1.2, // breathing room for text, and taller rows for math to grow into
   theme: THEMES.default,
-  // OSC 8 hyperlinks: show the target on hover, open with Cmd-click (plain clicks still select text)
-  linkHandler: {
-    activate: (e, uri) => { if (e.metaKey) invoke('open_url', { url: uri }); },
-    hover: (_, uri) => { statusBar.textContent = `${uri}  ·  ⌘-click to open`; statusBar.hidden = false; },
-    leave: () => { statusBar.hidden = true; },
-  },
+  linkHandler: links,
 });
+term.loadAddon(new WebLinksAddon.WebLinksAddon(links.activate, links));
 const statusBar = document.getElementById('status');
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
