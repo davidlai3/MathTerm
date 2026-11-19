@@ -9,4 +9,5 @@ The one feature is auto-detect: math in any program's output is typeset in place
 | [notes/auto-detect.md](notes/auto-detect.md) | How auto-detect finds, sizes and draws math |
 | [notes/dev.md](notes/dev.md) | Building, the screenshot hooks, gotchas |
 | [notes/plans.md](notes/plans.md) | Known issues and plans, roughly in priority order |
+| [notes/cross-platform.md](notes/cross-platform.md) | Roadmap for Linux support |
 | [notes/changelog.md](notes/changelog.md) | What changed and why, newest first |

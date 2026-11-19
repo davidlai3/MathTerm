@@ -76,3 +76,4 @@ The mode exists (see [auto-detect.md](auto-detect.md)). Still to do:
    Untested there.
 2. **Selection / copy.** Copying a math region yields spaces. Could put the LaTeX source on the clipboard.
 3. Later: tabs/splits.
+4. Linux support: see [cross-platform.md](cross-platform.md).
