@@ -135,6 +135,23 @@ fn no_press_and_hold() {
     unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&d) };
 }
 
+/// Make the web view first responder again when its window becomes key (Cmd-Tab back). wry only does this
+/// once, at creation; if something else took first responder since, keys go nowhere and the page never gets
+/// the `focus` event that `renderer.js` uses to focus the terminal.
+#[cfg(target_os = "macos")]
+fn refocus_webview(window: &tauri::Window) {
+    let Some(w) = window.app_handle().get_webview_window(window.label()) else { return };
+    let _ = w.with_webview(|wv| unsafe {
+        use objc2::runtime::AnyObject;
+        let view = wv.inner() as *mut AnyObject;
+        let win = wv.ns_window() as *mut AnyObject;
+        let fr: *mut AnyObject = objc2::msg_send![&*win, firstResponder];
+        if fr != view {
+            let _: bool = objc2::msg_send![&*win, makeFirstResponder: view];
+        }
+    });
+}
+
 /// Cmd-N: another window with its own shell, cascaded down-right from the one it was opened from.
 #[tauri::command]
 fn new_window(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
@@ -289,6 +306,10 @@ fn main() {
         .manage(Foreground::default())
         // Closing a window drops its pty, which hangs up its shell.
         .on_window_event(|window, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::WindowEvent::Focused(true) = event {
+                refocus_webview(window);
+            }
             if let tauri::WindowEvent::Destroyed = event {
                 window.state::<Session>().0.lock().unwrap().remove(window.label());
                 window.state::<Foreground>().0.lock().unwrap().remove(window.label());

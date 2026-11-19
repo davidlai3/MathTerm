@@ -2,6 +2,13 @@
 
 New entries go above the latest release marker; everything below a marker shipped in that release.
 
+## 2026-11-19: Cmd-Tab focus
+- Switching back with Cmd-Tab sometimes left the terminal unfocused. wry makes the WKWebView first
+  responder only when the window is created, and the JS `window` focus handler can only run if WebKit gets
+  focus. `refocus_webview` (`main.rs`) makes the web view first responder again on every `Focused(true)`
+  unless it already is.
+- Verified: builds. The intermittent case wasn't reproduced; needs checking in the app (user).
+
 ## 2026-11-18: Cmd-click opens plain URLs
 - Only OSC 8 hyperlinks were clickable (mostly emitted by the removed `mdv`), so URLs printed as plain text
   (`git`, Claude Code, `ls`) did nothing. Added `@xterm/addon-web-links` (0.12.0, the xterm 6 release),
